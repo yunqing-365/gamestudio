@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2:1 等轴测水面 AI 预览器 (Pro v3.6)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .pixelated {
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+        .checkerboard {
+            background-image: linear-gradient(45deg, #f8fafc 25%, transparent 25%), 
+                              linear-gradient(-45deg, #f8fafc 25%, transparent 25%), 
+                              linear-gradient(45deg, transparent 75%, #f8fafc 75%), 
+                              linear-gradient(-45deg, transparent 75%, #f8fafc 75%);
+            background-size: 20px 20px;
+            background-color: #ffffff;
+        }
+        #iso-grid {
+            position: relative;
+            transform-origin: top center;
+            transition: transform 0.2s ease;
+        }
+        .iso-tile {
+            position: absolute;
+            background-repeat: no-repeat;
+            transition: filter 0.5s ease;
+            /* 解决边缘抗锯齿导致的细缝 */
+            outline: 1px solid transparent; 
+        }
+        .ai-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+        .tab-active { border-bottom: 2px solid #3b82f6; color: #3b82f6; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen p-4 md:p-8 font-sans">
+
+    <div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-8">
+        
+        <!-- 左侧控制中心 -->
+        <aside class="lg:col-span-1 space-y-6">
+            <div class="bg-slate-900/80 backdrop-blur-md rounded-3xl p-6 border border-slate-800 shadow-2xl h-fit max-h-[90vh] overflow-y-auto scrollbar-hide">
+                <header class="mb-6">
+                    <h1 class="text-2xl font-black italic tracking-tighter text-blue-400">ISO-WATER <span class="text-xs not-italic font-bold text-slate-500 ml-2">v3.6 AI</span></h1>
+                    <p class="text-[10px] text-slate-500 uppercase tracking-widest font-bold mt-1">2:1 Ratio & Thickness Correction</p>
+                </header>
+
+                <!-- 上传模式切换 -->
+                <div class="flex border-b border-slate-800 mb-6 text-[10px] font-black uppercase tracking-widest">
+                    <button id="tab-sheet" class="flex-1 py-2 tab-active transition-all" onclick="switchMode('sheet')">雪碧图 (大图)</button>
+                    <button id="tab-multi" class="flex-1 py-2 text-slate-500 transition-all" onclick="switchMode('multi')">独立帧 (多图)</button>
+                </div>
+
+                <div class="space-y-6">
+                    <!-- 雪碧图配置 -->
+                    <div id="config-sheet" class="space-y-4">
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase">图片源</label>
+                        <input id="imgUrl" type="text" placeholder="粘贴大图 URL..." class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs outline-none focus:border-blue-500 mb-2">
+                        <button onclick="document.getElementById('sheetFile').click()" class="w-full py-2 bg-slate-800 border border-slate-700 rounded-xl text-[10px] font-bold hover:bg-slate-700 transition">📂 选择本地素材</button>
+                        <input type="file" id="sheetFile" class="hidden" accept="image/*" onchange="handleFile(event, 'sheet')">
+                        
+                        <div class="grid grid-cols-2 gap-3 pt-2">
+                            <div>
+                                <label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">列数 (Cols)</label>
+                                <input id="cols" type="number" value="4" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">行数 (Rows)</label>
+                                <input id="rows" type="number" value="2" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs outline-none">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 独立帧配置 -->
+                    <div id="config-multi" class="hidden space-y-4">
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase">批量导入</label>
+                        <button onclick="document.getElementById('multiFile').click()" class="w-full py-4 bg-blue-900/20 border-2 border-dashed border-blue-800/50 rounded-2xl text-[10px] font-black text-blue-400 hover:bg-blue-900/30 transition uppercase tracking-widest">批量选择本地图片帧</button>
+                        <input type="file" id="multiFile" class="hidden" accept="image/*" multiple onchange="handleFile(event, 'multi')">
+                        <div id="frameList" class="space-y-1 max-h-32 overflow-y-auto pr-1"></div>
+                    </div>
+
+                    <!-- 拼接修正配置 -->
+                    <section class="pt-4 border-t border-slate-800">
+                        <div class="flex justify-between items-center mb-2 text-[10px] font-bold text-blue-400 uppercase">
+                            <span>厚度/间距修正 (Overlap)</span>
+                            <span id="overlapVal" class="font-mono text-xs">0px</span>
+                        </div>
+                        <input id="overlap" type="range" min="-30" max="30" value="0" class="w-full accent-blue-500 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                        <p class="text-[9px] text-slate-500 mt-1">若 Tile 有厚度，请向左调节（负值）进行覆盖拼接</p>
+                    </section>
+
+                    <section>
+                        <div class="flex justify-between items-center mb-2 text-[10px] font-bold text-slate-400 uppercase">
+                            <span>动画帧速</span>
+                            <span id="speedVal" class="text-blue-400 font-mono text-xs">150ms</span>
+                        </div>
+                        <input id="speed" type="range" min="10" max="600" value="150" class="w-full accent-blue-500 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                    </section>
+
+                    <section>
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">平铺规模</label>
+                        <select id="gridSize" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="4">4x4 小型</option>
+                            <option value="6" selected>6x6 中型</option>
+                            <option value="8">8x8 大型</option>
+                        </select>
+                    </section>
+
+                    <!-- ✨ Gemini AI 模块 -->
+                    <div class="pt-6 border-t border-slate-800 space-y-6">
+                        <h2 class="text-xs font-black text-blue-400 flex items-center tracking-widest uppercase">
+                            <span class="mr-2">✨</span> Gemini 智能增强
+                        </h2>
+                        <div class="space-y-3">
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase">氛围滤镜 (AI Mood)</label>
+                            <div class="flex gap-2">
+                                <input id="moodPrompt" type="text" placeholder="如：极地、黄昏..." class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs outline-none focus:border-blue-500">
+                                <button id="applyMood" class="bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-xl transition-all shadow-lg active:scale-95">✨</button>
+                            </div>
+                        </div>
+                        <button id="aiAnalyze" class="w-full py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center transition-all">🔍 智能场景分析建议</button>
+                        <div id="aiResponse" class="hidden bg-slate-950/80 border border-blue-900/30 rounded-xl p-4 text-[11px] leading-relaxed text-slate-400 italic"></div>
+                    </div>
+
+                    <button id="playBtn" class="w-full py-4 bg-blue-600 text-white rounded-2xl font-black hover:bg-blue-700 transition shadow-xl shadow-blue-900/20 uppercase tracking-widest text-sm">开始预览</button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 右侧预览主窗口 -->
+        <main class="lg:col-span-3 flex flex-col gap-6">
+            <div class="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl relative overflow-hidden group">
+                <div class="flex justify-between items-center mb-6">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
+                        <span class="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Stability Preview / 稳定性与对齐测试</span>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button onclick="zoom(0.2)" class="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 text-xs">+</button>
+                        <button onclick="zoom(-0.2)" class="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 text-xs">-</button>
+                    </div>
+                </div>
+
+                <div class="checkerboard w-full h-[600px] rounded-3xl overflow-auto relative border border-slate-800/50 shadow-inner">
+                    <div id="iso-grid" class="pixelated"></div>
+                </div>
+
+                <div class="absolute bottom-12 left-1/2 -translate-x-1/2 bg-slate-950/80 backdrop-blur px-4 py-1.5 rounded-full border border-slate-800 text-[9px] font-mono text-blue-400">
+                    FRAME: <span id="currentFrameDisplay">0</span> / <span id="totalFrameDisplay">0</span>
+                </div>
+            </div>
+
+            <!-- 算法说明卡片 -->
+            <div class="bg-blue-950/10 border border-blue-900/20 p-5 rounded-3xl flex items-start gap-4">
+                <span class="text-blue-400 mt-1">ℹ️</span>
+                <div class="text-[11px] text-slate-500 leading-relaxed">
+                    <strong class="text-blue-300 block mb-1 uppercase tracking-wider tracking-tighter">Thickness & Overlap Logic / 拼接逻辑</strong>
+                    针对带厚度的 Tile，我们启用了深度排序（Z-index）。通过调节“厚度修正”，Tile 会在垂直方向上产生负偏移，使后方的水面遮盖掉前方 Tile 的厚度边框。同时优化了背景百分比定位算法，防止动画播放时产生抖动。
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script type="module">
+        const apiKey = "";
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'iso-water-v3.6';
+
+        // State
+        let currentMode = 'sheet';
+        let currentFrameIndex = 0;
+        let timer = null;
+        let scale = 1;
+        let isPlaying = false;
+        let multiFrameUrls = [];
+        let spriteUrl = "http://googleusercontent.com/image_generation_content/13";
+
+        // DOM
+        const grid = document.getElementById('iso-grid');
+        const speedInput = document.getElementById('speed');
+        const speedVal = document.getElementById('speedVal');
+        const overlapInput = document.getElementById('overlap');
+        const overlapVal = document.getElementById('overlapVal');
+        const gridSizeSelect = document.getElementById('gridSize');
+        const aiResponse = document.getElementById('aiResponse');
+        const playBtn = document.getElementById('playBtn');
+        const currentFrameDisplay = document.getElementById('currentFrameDisplay');
+        const totalFrameDisplay = document.getElementById('totalFrameDisplay');
+
+        window.switchMode = (mode) => {
+            currentMode = mode;
+            document.getElementById('tab-sheet').className = mode === 'sheet' ? 'flex-1 py-2 tab-active' : 'flex-1 py-2 text-slate-500';
+            document.getElementById('tab-multi').className = mode === 'multi' ? 'flex-1 py-2 tab-active' : 'flex-1 py-2 text-slate-500';
+            document.getElementById('config-sheet').classList.toggle('hidden', mode !== 'sheet');
+            document.getElementById('config-multi').classList.toggle('hidden', mode !== 'multi');
+            stopAnimation();
+        };
+
+        window.handleFile = (event, mode) => {
+            const files = event.target.files;
+            if (!files.length) return;
+
+            if (mode === 'sheet') {
+                spriteUrl = URL.createObjectURL(files[0]);
+                document.getElementById('imgUrl').value = spriteUrl;
+            } else {
+                const list = document.getElementById('frameList');
+                list.innerHTML = '';
+                multiFrameUrls = Array.from(files).map(f => {
+                    const url = URL.createObjectURL(f);
+                    const div = document.createElement('div');
+                    div.className = 'text-[9px] text-slate-500 bg-slate-900 p-1 px-2 rounded border border-slate-800 truncate';
+                    div.innerText = f.name;
+                    list.appendChild(div);
+                    return url;
+                });
+            }
+            renderGrid();
+        };
+
+        function renderGrid() {
+            grid.innerHTML = '';
+            const size = parseInt(gridSizeSelect.value);
+            const activeUrl = currentMode === 'sheet' ? (document.getElementById('imgUrl').value || spriteUrl) : (multiFrameUrls[0] || '');
+            const overlap = parseInt(overlapInput.value);
+            
+            if (!activeUrl) return;
+
+            const tempImg = new Image();
+            tempImg.src = activeUrl;
+            tempImg.onload = () => {
+                const cols = currentMode === 'sheet' ? Math.max(1, parseInt(document.getElementById('cols').value)) : 1;
+                const rows = currentMode === 'sheet' ? Math.max(1, parseInt(document.getElementById('rows').value)) : 1;
+                
+                const tileW = tempImg.width / cols;
+                const tileH = tempImg.height / rows;
+
+                for (let r = 0; r < size; r++) {
+                    for (let c = 0; c < size; c++) {
+                        const tile = document.createElement('div');
+                        tile.className = 'iso-tile pixelated-tile';
+                        tile.style.width = `${tileW}px`;
+                        tile.style.height = `${tileH}px`;
+                        tile.style.backgroundImage = `url('${activeUrl}')`;
+                        
+                        if (currentMode === 'sheet') {
+                            tile.style.backgroundSize = `${cols * 100}% ${rows * 100}%`;
+                        } else {
+                            tile.style.backgroundSize = 'contain';
+                        }
+
+                        // 对齐算法：考虑 Overlap 修正
+                        // 水平：c * 宽度 + (奇数行偏移)
+                        // 垂直：r * (高度/2 + 偏移)
+                        const left = (c * tileW) + (r % 2 === 1 ? tileW / 2 : 0);
+                        const top = r * (tileH / 2 + overlap);
+
+                        tile.style.left = `${left}px`;
+                        tile.style.top = `${top}px`;
+                        // 深度排序：行数越大越靠前（Z-index），确保遮挡关系正确
+                        tile.style.zIndex = r * 10 + c;
+                        
+                        grid.appendChild(tile);
+                    }
+                }
+
+                const totalW = size * tileW + (tileW / 2);
+                const totalH = size * (tileH / 2 + overlap) + tileH;
+                grid.style.width = `${totalW}px`;
+                grid.style.height = `${totalH}px`;
+                grid.style.left = `50%`;
+                grid.style.marginLeft = `-${totalW/2}px`;
+                grid.style.marginTop = `50px`;
+
+                if (isPlaying) startAnimation();
+            };
+        }
+
+        function startAnimation() {
+            if (timer) clearInterval(timer);
+            isPlaying = true;
+            playBtn.innerText = "停止播放";
+            playBtn.classList.replace('bg-blue-600', 'bg-red-500');
+
+            const cols = currentMode === 'sheet' ? Math.max(1, parseInt(document.getElementById('cols').value)) : 1;
+            const rows = currentMode === 'sheet' ? Math.max(1, parseInt(document.getElementById('rows').value)) : 1;
+            const total = currentMode === 'sheet' ? (cols * rows) : multiFrameUrls.length;
+            totalFrameDisplay.innerText = total;
+
+            timer = setInterval(() => {
+                currentFrameIndex = (currentFrameIndex + 1) % total;
+                currentFrameDisplay.innerText = currentFrameIndex + 1;
+                
+                const tiles = document.querySelectorAll('.pixelated-tile');
+                tiles.forEach(tile => {
+                    if (currentMode === 'sheet') {
+                        const c = currentFrameIndex % cols;
+                        const r = Math.floor(currentFrameIndex / cols);
+                        
+                        // 使用精确的像素偏移避免百分比浮动导致的抖动
+                        const x = (c * (100 / Math.max(1, cols - 1)));
+                        const y = (r * (100 / Math.max(1, rows - 1)));
+                        
+                        // 只有一个行列时特殊处理
+                        tile.style.backgroundPosition = total > 1 ? `${x}% ${y}%` : '0% 0%';
+                    } else {
+                        tile.style.backgroundImage = `url('${multiFrameUrls[currentFrameIndex]}')`;
+                    }
+                });
+            }, speedInput.value);
+        }
+
+        function stopAnimation() {
+            isPlaying = false;
+            if (timer) clearInterval(timer);
+            playBtn.innerText = "开始播放动画";
+            playBtn.classList.replace('bg-red-500', 'bg-blue-600');
+        }
+
+        playBtn.onclick = () => {
+            if (isPlaying) stopAnimation();
+            else { renderGrid(); startAnimation(); }
+        };
+
+        // Gemini AI Logic
+        async function fetchGemini(prompt, isJson = false) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const body = { contents: [{ parts: [{ text: prompt }] }] };
+            if (isJson) body.generationConfig = { responseMimeType: "application/json" };
+            const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            return await response.json();
+        }
+
+        document.getElementById('aiAnalyze').onclick = async () => {
+            aiResponse.classList.remove('hidden');
+            aiResponse.innerText = "✨ AI 正在计算 Tile 的物理碰撞与视觉衔接建议...";
+            try {
+                const res = await fetchGemini("分析一种带有侧面厚度的 2:1 等轴测水面 Tile。给出 3 个关于拼贴重叠（Overlap）以消除缝隙的技巧，以及 3 种建议的环境光影设置（中文）。");
+                aiResponse.innerText = res.candidates[0].content.parts[0].text;
+            } catch (e) { aiResponse.innerText = "AI 暂时无法连接。"; }
+        };
+
+        document.getElementById('applyMood').onclick = async () => {
+            const mood = document.getElementById('moodPrompt').value.trim();
+            if (!mood) return;
+            aiResponse.classList.remove('hidden');
+            aiResponse.innerText = `✨ 正在调整整体意境：${mood}...`;
+            try {
+                const res = await fetchGemini(`Atmosphere: "${mood}". Return JSON: {"speed": number (30-300), "filter": string (css filter), "overlapCorrection": number (-10 to 10)}. JSON only.`, true);
+                const cfg = JSON.parse(res.candidates[0].content.parts[0].text);
+                speedInput.value = cfg.speed;
+                speedVal.innerText = `${cfg.speed}ms`;
+                overlapInput.value = cfg.overlapCorrection;
+                overlapVal.innerText = `${cfg.overlapCorrection}px`;
+                document.querySelectorAll('.iso-tile').forEach(t => t.style.filter = cfg.filter);
+                renderGrid();
+            } catch (e) { aiResponse.innerText = "意境注入失败。"; }
+        };
+
+        window.zoom = (v) => { scale = Math.max(0.2, Math.min(4, scale + v)); grid.style.transform = `scale(${scale})`; };
+        speedInput.oninput = () => speedVal.innerText = `${speedInput.value}ms`;
+        overlapInput.oninput = () => { overlapVal.innerText = `${overlapInput.value}px`; renderGrid(); };
+        gridSizeSelect.onchange = renderGrid;
+        
+        window.onload = renderGrid;
+    </script>
+</body>
+</html>

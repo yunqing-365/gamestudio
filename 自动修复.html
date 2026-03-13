@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Isometric Tile 无缝修复实验室 v15.0 (接缝终结者)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .pixelated {
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+        .checkerboard {
+            background-image: linear-gradient(45deg, #f1f5f9 25%, transparent 25%), 
+                              linear-gradient(-45deg, #f1f5f9 25%, transparent 25%), 
+                              linear-gradient(45deg, transparent 75%, #f1f5f9 75%), 
+                              linear-gradient(-45deg, transparent 75%, #f1f5f9 75%);
+            background-size: 16px 16px;
+            background-color: #ffffff;
+        }
+        canvas { border: 1px solid #e2e8f0; border-radius: 20px; max-width: 100%; height: auto; box-shadow: 0 40px 80px -20px rgba(0,0,0,0.3); }
+        .loading-overlay {
+            background: rgba(10, 15, 30, 0.98);
+            backdrop-filter: blur(35px);
+        }
+        
+        #isoGrid {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform-origin: center center;
+        }
+
+        /* =====================================================
+         * FIX #1: 删除 .iso-tile 的 div 方案
+         * 改用单一 <canvas> 绘制整张网格，彻底消除
+         * 浏览器在相邻 div 之间产生的亚像素渲染缝隙。
+         * ===================================================== */
+
+        /* 统一美化滑动条 */
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 5px; background: #e2e8f0; border-radius: 10px; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 22px; width: 22px; border-radius: 50%;
+            background: #2563eb; cursor: pointer; margin-top: -9px; border: 3px solid white;
+            box-shadow: 0 5px 15px rgba(37, 99, 235, 0.4);
+        }
+        
+        .panel-card {
+            background: white; padding: 24px; border-radius: 36px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.08);
+            border: 1px solid #f1f5f9;
+        }
+        .section-title { font-size: 10px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.2em; border-bottom: 1px solid #f1f5f9; padding-bottom: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen font-sans antialiased overflow-x-hidden">
+
+    <div class="max-w-full mx-auto p-4 lg:p-10 space-y-8">
+        <!-- 头部 -->
+        <header class="flex flex-col lg:flex-row justify-between items-center bg-white p-8 rounded-[3.5rem] shadow-2xl border border-slate-100">
+            <div class="flex items-center gap-8">
+                <div class="w-20 h-20 bg-gradient-to-tr from-cyan-500 via-blue-600 to-indigo-900 rounded-[2rem] flex items-center justify-center text-white text-5xl shadow-2xl rotate-2 ring-[12px] ring-blue-50">🌊</div>
+                <div>
+                    <h1 class="text-4xl font-black text-slate-900 tracking-tighter uppercase italic">Panoramic Master <span class="text-blue-600">v15.0</span></h1>
+                    <p class="text-slate-400 text-[10px] font-bold uppercase tracking-[0.5em] mt-1">The Definitive Isometric Tiling Solution</p>
+                </div>
+            </div>
+            <div class="flex gap-4 mt-6 lg:mt-0">
+                <button id="resetBtn" class="px-8 py-4 text-[11px] font-black uppercase tracking-widest text-slate-400 hover:text-red-500 transition border-4 border-slate-100 rounded-[2rem] bg-white">恢复原状</button>
+                <button id="downloadBtn" class="px-12 py-4 bg-blue-600 text-white rounded-[2rem] text-[11px] font-black uppercase shadow-2xl shadow-blue-200 hover:bg-blue-700 transition active:scale-95 tracking-widest ring-8 ring-blue-50">下载无缝 Tile</button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            <!-- 左侧：工作台 -->
+            <div class="lg:col-span-8 grid grid-cols-1 md:grid-cols-12 gap-6">
+                
+                <!-- 画布区域 -->
+                <div class="md:col-span-8 bg-white p-10 rounded-[4rem] shadow-2xl relative min-h-[650px] flex flex-col">
+                    <div class="flex justify-between items-center mb-8 px-2">
+                        <h2 class="text-[11px] font-black uppercase text-slate-300 tracking-[0.4em]">Matrix Lab / 编辑视窗</h2>
+                        <span id="pixelInfo" class="text-[10px] font-mono text-slate-400 bg-slate-50 px-3 py-1 rounded-full">0 x 0 px</span>
+                    </div>
+                    
+                    <div id="canvasWrapper" class="flex-1 flex flex-col items-center justify-center checkerboard rounded-[3.5rem] p-10 relative border-2 border-slate-50 shadow-inner overflow-hidden">
+                        <canvas id="mainCanvas" class="pixelated relative z-0"></canvas>
+                        
+                        <!-- V 形参考线 -->
+                        <div id="vGuideContainer" class="absolute inset-0 pointer-events-none z-10">
+                            <svg id="vGuideSvg" width="100%" height="100%" class="absolute inset-0">
+                                <path id="vPath" d="" fill="none" stroke="#3b82f6" stroke-width="4" stroke-dasharray="15,10" stroke-opacity="0.8" />
+                            </svg>
+                        </div>
+
+                        <div id="uploadPlaceholder" class="absolute inset-0 flex flex-col items-center justify-center cursor-pointer hover:bg-white/40 transition-all group" onclick="document.getElementById('fileInput').click()">
+                            <div class="w-32 h-32 bg-white rounded-full flex items-center justify-center shadow-2xl mb-8 group-hover:scale-110 transition-transform">
+                                <span class="text-6xl">📁</span>
+                            </div>
+                            <p class="text-sm font-black text-slate-500 uppercase tracking-[0.4em]">导入素材开始全景修复</p>
+                        </div>
+
+                        <div id="loadingOverlay" class="loading-overlay absolute inset-0 hidden flex flex-col items-center justify-center rounded-[3.5rem] z-50 text-center px-16">
+                            <div class="w-16 h-16 border-8 border-blue-500 border-t-transparent rounded-full animate-spin mb-10 shadow-2xl"></div>
+                            <p class="text-white font-black text-2xl animate-pulse tracking-[0.6em] uppercase">✨ AI HEALING...</p>
+                            <p class="text-slate-500 text-[10px] uppercase tracking-widest mt-4">正在计算 2:1 纹理拓扑结构并进行深度补完</p>
+                        </div>
+                    </div>
+
+                    <!-- 主控制按钮 -->
+                    <div class="grid grid-cols-3 gap-6 mt-10">
+                        <button id="wrapBtn" class="py-6 bg-slate-900 text-white rounded-[2rem] text-[11px] font-black uppercase tracking-widest hover:bg-blue-600 transition shadow-xl active:scale-95">1. 对齐中心 (Wrap)</button>
+                        <button id="blendBtn" class="py-6 bg-slate-900 text-white rounded-[2rem] text-[11px] font-black uppercase tracking-widest hover:bg-blue-600 transition shadow-xl active:scale-95 italic">2. 结构愈合 (Blend)</button>
+                        <button id="aiRepairBtn" class="py-6 bg-blue-600 text-white rounded-[2rem] text-[11px] font-black uppercase tracking-widest hover:bg-blue-500 transition shadow-2xl shadow-blue-200 active:scale-95">✨ 3. AI 完美平铺</button>
+                    </div>
+                </div>
+
+                <!-- 侧边调节工具 -->
+                <div class="md:col-span-4 space-y-6 overflow-y-auto max-h-[85vh] pr-2 scrollbar-hide">
+                    
+                    <!-- 1. 几何面板 -->
+                    <div class="panel-card space-y-5">
+                        <h3 class="section-title">几何预处理 <span>Stage A</span></h3>
+                        <div class="flex flex-col gap-4">
+                            <button id="autoCropBtn" class="w-full py-4 bg-blue-50 text-blue-600 text-[10px] font-black uppercase rounded-2xl hover:bg-blue-100 transition tracking-widest">剪除外部多余白边</button>
+                            <div class="bg-slate-50 p-5 rounded-3xl space-y-4">
+                                <div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase">
+                                    <span>顶点定位 (Vertex)</span>
+                                    <span id="surfaceVal" class="text-blue-600 font-mono">100%</span>
+                                </div>
+                                <input type="range" id="surfaceRange" min="10" max="100" value="100" class="w-full">
+                            </div>
+                            <button id="deleteThicknessBtn" class="w-full py-4 bg-red-500 text-white text-[11px] font-black uppercase rounded-2xl hover:bg-red-600 shadow-xl transition">物理切除厚度层</button>
+                        </div>
+                    </div>
+
+                    <!-- 2. HSL 颜色面板 -->
+                    <div class="panel-card space-y-5">
+                        <h3 class="section-title text-indigo-600">HSL 色彩对齐 <span>Stage B</span></h3>
+                        <div class="space-y-6">
+                            <div class="bg-indigo-50/50 p-6 rounded-3xl space-y-6 border border-indigo-100/50">
+                                <div>
+                                    <div class="flex justify-between text-[10px] font-bold text-indigo-700 uppercase mb-3">
+                                        <span>底部亮度补偿</span>
+                                        <span id="lumaVal" class="font-black">0%</span>
+                                    </div>
+                                    <input type="range" id="lumaRange" min="-30" max="100" value="0" class="w-full accent-indigo-600">
+                                </div>
+                                <div>
+                                    <div class="flex justify-between text-[10px] font-bold text-indigo-700 uppercase mb-3">
+                                        <span>修正高度深度</span>
+                                        <span id="lumaDepthVal" class="font-black">40%</span>
+                                    </div>
+                                    <input type="range" id="lumaDepthRange" min="5" max="100" value="40" class="w-full accent-indigo-600">
+                                </div>
+                                <div class="pt-3 border-t border-indigo-100/50">
+                                    <div class="flex justify-between text-[10px] font-bold text-indigo-700 uppercase mb-3">
+                                        <span>饱和度微调</span>
+                                        <span id="satVal">0%</span>
+                                    </div>
+                                    <input type="range" id="satRange" min="-30" max="60" value="0" class="w-full accent-indigo-600">
+                                </div>
+                            </div>
+                            <button id="lumaBalanceBtn" class="w-full py-4 bg-indigo-600 text-white text-[11px] font-black uppercase rounded-2xl shadow-xl hover:bg-indigo-700 transition">消除周期阴影格</button>
+                        </div>
+                    </div>
+
+                    <!-- 3. 对齐面板 -->
+                    <div class="panel-card space-y-5">
+                        <h3 class="section-title">手动对齐偏移 <span>Stage C</span></h3>
+                        <div class="space-y-5">
+                            <div>
+                                <div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-2">
+                                    <span>横向偏移 (Wrap X)</span>
+                                    <span id="wrapXVal" class="text-blue-600 font-mono">50%</span>
+                                </div>
+                                <input type="range" id="wrapXRange" min="0" max="100" value="50" class="w-full">
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-2">
+                                    <span>纵向偏移 (Wrap Y)</span>
+                                    <span id="wrapYVal" class="text-blue-600 font-mono">50%</span>
+                                </div>
+                                <input type="range" id="wrapYRange" min="0" max="100" value="50" class="w-full">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 4. 融合算法面板 -->
+                    <div class="panel-card space-y-5">
+                        <h3 class="section-title text-blue-600">各向异性结构缝合 <span>Stage D</span></h3>
+                        <div class="space-y-6">
+                            <div>
+                                <div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-2">
+                                    <span>渗透半径</span>
+                                    <span id="blendVal" class="text-blue-600 font-mono">45%</span>
+                                </div>
+                                <input type="range" id="blendRange" min="5" max="100" value="45" class="w-full">
+                            </div>
+                            <div class="bg-blue-50/50 p-5 rounded-3xl border border-blue-100 space-y-4">
+                                <div class="flex justify-between text-[10px] font-bold text-blue-700 uppercase">
+                                    <span>结构破碎力度 (Noise)</span>
+                                    <span id="jitterVal" class="font-black text-blue-600 font-mono">75%</span>
+                                </div>
+                                <input type="range" id="jitterRange" min="0" max="100" value="75" class="w-full accent-blue-600">
+                                <p class="text-[9px] text-blue-400 italic">↑ 消除截图中的直线割裂感，请拉高此值。</p>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- 右侧：拼接预览 -->
+            <div class="lg:col-span-4">
+                <div class="bg-slate-900 rounded-[4.5rem] p-12 border border-slate-800 shadow-[0_0_120px_rgba(0,0,0,0.6)] sticky top-10 flex flex-col h-full">
+                    <div class="flex justify-between items-center mb-10 px-2">
+                        <div class="flex items-center gap-6">
+                            <div class="w-6 h-6 rounded-full bg-green-500 animate-pulse shadow-[0_0_30px_rgba(34,197,94,1)]"></div>
+                            <h3 class="text-base font-black text-slate-400 uppercase tracking-[0.5em]">Seamless Live</h3>
+                        </div>
+                        <div class="flex gap-4">
+                            <button onclick="changeScale(0.1)" class="w-14 h-14 flex items-center justify-center bg-slate-800 rounded-3xl hover:bg-slate-700 font-black text-4xl transition shadow-lg text-slate-400">+</button>
+                            <button onclick="changeScale(-0.1)" class="w-14 h-14 flex items-center justify-center bg-slate-800 rounded-3xl hover:bg-slate-700 font-black text-4xl transition shadow-lg text-slate-400">-</button>
+                        </div>
+                    </div>
+
+                    <div id="previewExpanse" class="checkerboard w-full flex-1 rounded-[3.5rem] overflow-hidden relative border-8 border-slate-800 shadow-inner group cursor-move">
+                        <div id="isoGrid" class="pixelated transition-transform duration-300"></div>
+                    </div>
+
+                    <div class="mt-12 bg-slate-800/60 p-10 rounded-[3.5rem] border border-slate-700/50 space-y-8 text-center">
+                        <div class="flex justify-between items-center">
+                            <span class="text-[12px] font-black text-slate-500 uppercase tracking-widest">垂直精调 (Overlap)</span>
+                            <span id="overlapVal" class="text-2xl font-mono font-black text-blue-400 border-4 border-blue-900/50 px-8 py-3 rounded-full bg-slate-950 shadow-2xl">0px</span>
+                        </div>
+                        <input type="range" id="overlapRange" min="-180" max="80" value="0" class="w-full accent-blue-500 h-2 bg-slate-700 rounded-full">
+                        <p class="text-[10px] text-slate-500 font-bold tracking-widest opacity-60">
+                            * v15.0 单Canvas无缝渲染引擎已激活
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <input type="file" id="fileInput" class="hidden" accept="image/*">
+
+    <script type="module">
+        const apiKey = ""; 
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'iso-seamless-v15';
+
+        const canvas = document.getElementById('mainCanvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const isoGrid = document.getElementById('isoGrid');
+        const fileInput = document.getElementById('fileInput');
+        const placeholder = document.getElementById('uploadPlaceholder');
+        const loading = document.getElementById('loadingOverlay');
+        const vPath = document.getElementById('vPath');
+        const vGuideSvg = document.getElementById('vGuideSvg');
+        
+        const surfaceRange = document.getElementById('surfaceRange');
+        const lumaRange = document.getElementById('lumaRange');
+        const lumaDepthRange = document.getElementById('lumaDepthRange');
+        const satRange = document.getElementById('satRange');
+        const wrapXRange = document.getElementById('wrapXRange');
+        const wrapYRange = document.getElementById('wrapYRange');
+        const blendRange = document.getElementById('blendRange');
+        const jitterRange = document.getElementById('jitterRange');
+        const overlapRange = document.getElementById('overlapRange');
+
+        let originalImg = null;
+        let previewScale = 0.65;
+
+        // --- HSL 核心色彩算法（原版保留）---
+        function rgbToHsl(r, g, b) {
+            r /= 255, g /= 255, b /= 255;
+            const max = Math.max(r, g, b), min = Math.min(r, g, b);
+            let h, s, l = (max + min) / 2;
+            if (max === min) h = s = 0;
+            else {
+                const d = max - min;
+                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                switch (max) {
+                    case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                    case g: h = (b - r) / d + 2; break;
+                    case b: h = (r - g) / d + 4; break;
+                }
+                h /= 6;
+            }
+            return [h, s, l];
+        }
+
+        function hslToRgb(h, s, l) {
+            let r, g, b;
+            const h2r = (p, q, t) => { if(t<0)t+=1; if(t>1)t-=1; if(t<1/6)return p+(q-p)*6*t; if(t<1/2)return q; if(t<2/3)return p+(q-p)*(2/3-t)*6; return p; };
+            const q = l < 0.5 ? l*(1+s) : l+s-l*s, p = 2*l-q;
+            r = h2r(p,q,h+1/3); g = h2r(p,q,h); b = h2r(p,q,h-1/3);
+            return [r*255, g*255, b*255];
+        }
+
+        // --- 1. 文件载入与引导线（原版保留）---
+        fileInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const img = new Image();
+                img.onload = () => {
+                    originalImg = img;
+                    canvas.width = img.width; canvas.height = img.height;
+                    ctx.clearRect(0,0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0);
+                    placeholder.classList.add('hidden');
+                    document.getElementById('pixelInfo').innerText = `${img.width} x ${img.height} px`;
+                    updateGuide(); updatePreview();
+                };
+                img.src = ev.target.result;
+            };
+            reader.readAsDataURL(file);
+        };
+
+        function updateGuide() {
+            if (!canvas.width) return;
+            const r = canvas.getBoundingClientRect();
+            const wr = document.getElementById('canvasWrapper').getBoundingClientRect();
+            const cy = r.height * (parseInt(surfaceRange.value) / 100);
+            vPath.setAttribute('d', `M 0,${cy-(r.width/4)} L ${r.width/2},${cy} L ${r.width},${cy-(r.width/4)}`);
+            vGuideSvg.style.top = `${r.top - wr.top}px`; vGuideSvg.style.left = `${r.left - wr.left}px`;
+            vGuideSvg.setAttribute('width', r.width); vGuideSvg.setAttribute('height', r.height);
+        }
+
+        // --- 2. HSL 深度平衡（原版保留）---
+        document.getElementById('lumaBalanceBtn').onclick = () => {
+            if (!canvas.width) return;
+            const w=canvas.width, h=canvas.height, img=ctx.getImageData(0,0,w,h);
+            const lGain=parseInt(lumaRange.value)/100, dFac=parseInt(lumaDepthRange.value)/100, sGain=parseInt(satRange.value)/100;
+            const thrY = h * (1 - dFac);
+            for(let y=0; y<h; y++){
+                let lAdj=0, sAdj=0; 
+                if(y>thrY) {
+                    const localRatio = Math.pow((y-thrY)/(h-thrY), 1.6);
+                    lAdj = localRatio * lGain; sAdj = localRatio * sGain;
+                }
+                for(let x=0; x<w; x++){
+                    const i=(y*w+x)*4; if(img.data[i+3]<10) continue;
+                    let [hv,sv,lv] = rgbToHsl(img.data[i],img.data[i+1],img.data[i+2]);
+                    lv=Math.max(0,Math.min(1, lv + lAdj));
+                    sv=Math.max(0,Math.min(1, sv + sAdj));
+                    const [r,g,b] = hslToRgb(hv,sv,lv);
+                    img.data[i]=r; img.data[i+1]=g; img.data[i+2]=b;
+                }
+            }
+            ctx.putImageData(img,0,0); updatePreview();
+        };
+
+        // --- 3. 几何预处理（原版保留）---
+        document.getElementById('autoCropBtn').onclick = () => {
+            const px = ctx.getImageData(0,0,canvas.width,canvas.height);
+            let minX=canvas.width, minY=canvas.height, maxX=0, maxY=0, found=false;
+            for(let y=0; y<canvas.height; y++){
+                for(let x=0; x<canvas.width; x++){
+                    if(px.data[(y*canvas.width+x)*4+3]>20){
+                        minX=Math.min(minX,x); maxX=Math.max(maxX,x); minY=Math.min(minY,y); maxY=Math.max(maxY,y); found=true;
+                    }
+                }
+            }
+            if(found){
+                const w=maxX-minX+1, h=maxY-minY+1;
+                const data = ctx.getImageData(minX,minY,w,h);
+                canvas.width=w; canvas.height=h; ctx.putImageData(data,0,0);
+                updatePreview(); updateGuide();
+            }
+        };
+
+        document.getElementById('deleteThicknessBtn').onclick = () => {
+            const w=canvas.width, h=canvas.height, sH=Math.floor(h*(parseInt(surfaceRange.value)/100));
+            const imgData = ctx.getImageData(0,0,w,h);
+            for(let y=0; y<h; y++){
+                for(let x=0; x<w; x++){
+                    if(y > (sH - 0.5 * Math.abs(x - w/2))) imgData.data[(y*w+x)*4+3]=0;
+                }
+            }
+            ctx.putImageData(imgData,0,0);
+            const final = ctx.getImageData(0,0,w,sH); canvas.height=sH; ctx.putImageData(final,0,0);
+            surfaceRange.value=100; updateGuide(); updatePreview();
+        };
+
+        // =====================================================
+        // 无缝融合：正确的双轴独立折叠混合
+        //
+        // 之前的问题：oppX = (x + w/2) % w 同时偏移XY，
+        //   等于把整个tile对角翻转，四条边的接缝全混在一起，
+        //   互相干扰导致中间出现十字模糊带。
+        //
+        // 正确做法：X方向和Y方向的接缝独立处理：
+        //
+        //   X轴折叠：把左半边和右半边互相混合
+        //     · 对每个像素 x，其"镜像对"在 (x + w/2) % w
+        //     · 越靠近左边(x≈0)或右边(x≈w)，混合权重越偏向对面
+        //     · 越靠近中心(x≈w/2)，越保留自身
+        //
+        //   Y轴折叠：把上半边和下半边互相混合（同理）
+        //
+        //   两次折叠独立执行（先X后Y），最终四个角的接缝
+        //   都能正确衔接，图案从四边自然延伸进来。
+        //
+        //   Noise让融合边界不是一条硬直线。
+        // =====================================================
+        function deepSeamHealing(radiusPct, jitterPct) {
+            const w = canvas.width, h = canvas.height;
+            const rX  = Math.round(w / 2 * (radiusPct / 100));
+            const rY  = Math.round(h / 2 * (radiusPct / 100));
+            const noiseAmp = (jitterPct / 100) * 0.35;
+
+            // smoothstep helper
+            const ss = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+
+            // ── PASS 1: X轴折叠 ─────────────────────────────
+            // 把左边[0..rX]和右边[w-rX..w]互相混合
+            // 对面像素 = (x + w/2) % w  （只偏移X，Y不动）
+            {
+                const imgData = ctx.getImageData(0, 0, w, h);
+                const data = imgData.data;
+                const src  = new Uint8ClampedArray(data);
+
+                for (let y = 0; y < h; y++) {
+                    for (let x = 0; x < w; x++) {
+                        const i = (y * w + x) * 4;
+                        if (src[i+3] < 5) continue;
+
+                        // 到左边或右边的距离（取近的那侧）
+                        const dLeft  = x;
+                        const dRight = w - 1 - x;
+                        const d = Math.min(dLeft, dRight);
+                        if (d >= rX) continue;  // 中间区域不处理
+
+                        // 归一化 0(边缘)→1(融合区内边界)
+                        const noise = Math.sin(x * 0.11 + y * 0.07) * noiseAmp
+                                    + Math.cos(x * 0.05 - y * 0.13) * noiseAmp * 0.5;
+                        const t = Math.max(0, Math.min(1, d / rX + noise));
+                        const alpha = ss(t);  // 0=对面, 1=自身
+
+                        // 对面：X方向折叠，Y不动
+                        const ox = (x + Math.round(w / 2)) % w;
+                        const oi = (y * w + ox) * 4;
+                        if (src[oi+3] < 5) continue;
+
+                        for (let c = 0; c < 3; c++) {
+                            data[i+c] = Math.round(src[i+c] * alpha + src[oi+c] * (1 - alpha));
+                        }
+                        data[i+3] = 255;
+                    }
+                }
+                ctx.putImageData(imgData, 0, 0);
+            }
+
+            // ── PASS 2: Y轴折叠 ─────────────────────────────
+            // 把上边[0..rY]和下边[h-rY..h]互相混合
+            // 对面像素 = (y + h/2) % h  （只偏移Y，X不动）
+            // 注意：此时读取的是经过PASS1处理后的图像
+            {
+                const imgData = ctx.getImageData(0, 0, w, h);
+                const data = imgData.data;
+                const src  = new Uint8ClampedArray(data);
+
+                for (let y = 0; y < h; y++) {
+                    for (let x = 0; x < w; x++) {
+                        const i = (y * w + x) * 4;
+                        if (src[i+3] < 5) continue;
+
+                        const dTop    = y;
+                        const dBottom = h - 1 - y;
+                        const d = Math.min(dTop, dBottom);
+                        if (d >= rY) continue;
+
+                        const noise = Math.sin(y * 0.11 + x * 0.07) * noiseAmp
+                                    + Math.cos(y * 0.05 - x * 0.13) * noiseAmp * 0.5;
+                        const t = Math.max(0, Math.min(1, d / rY + noise));
+                        const alpha = ss(t);
+
+                        // 对面：Y方向折叠，X不动
+                        const oy = (y + Math.round(h / 2)) % h;
+                        const oi = (oy * w + x) * 4;
+                        if (src[oi+3] < 5) continue;
+
+                        for (let c = 0; c < 3; c++) {
+                            data[i+c] = Math.round(src[i+c] * alpha + src[oi+c] * (1 - alpha));
+                        }
+                        data[i+3] = 255;
+                    }
+                }
+                ctx.putImageData(imgData, 0, 0);
+            }
+        }
+
+        document.getElementById('wrapBtn').onclick = () => {
+            const w=canvas.width, h=canvas.height, data=ctx.getImageData(0,0,w,h).data, newData=ctx.createImageData(w,h);
+            const ox = Math.floor(w * (parseInt(wrapXRange.value)/100)), oy = Math.floor(h * (parseInt(wrapYRange.value)/100));
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const nx=(x + ox)%w, ny=(y + oy)%h;
+                    for (let i = 0; i < 4; i++) newData.data[(ny*w+nx)*4+i]=data[(y*w+x)*4+i];
+                }
+            }
+            ctx.putImageData(newData, 0, 0); updatePreview();
+        };
+
+        document.getElementById('blendBtn').onclick = () => { 
+            if(canvas.width) { deepSeamHealing(parseInt(blendRange.value), parseInt(jitterRange.value)); updatePreview(); } 
+        };
+
+        document.getElementById('aiRepairBtn').onclick = async () => {
+            if(!canvas.width) return; loading.classList.remove('hidden');
+            try {
+                const base64=canvas.toDataURL('image/png').split(',')[1];
+                const prompt="2:1 isometric pixel art water tile. No thickness bottom. Seams are centered. REDRAW center cross-seams for perfect structural continuity. Connect turquoise caustics seamlessly in 4 directions. Output repaired image only.";
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: "image/png", data: base64 } }] }], generationConfig: { responseModalities: ['IMAGE'] } })
+                });
+                const res=await response.json(); const aiData=res.candidates?.[0]?.content?.parts?.find(p=>p.inlineData)?.inlineData?.data;
+                if(aiData){ const img=new Image(); img.onload=()=>{ ctx.drawImage(img,0,0,canvas.width,canvas.height); updatePreview(); }; img.src=`data:image/png;base64,${aiData}`; }
+            } catch(e) { console.error(e); } finally { loading.classList.add('hidden'); }
+        };
+
+        // =====================================================
+        // FIX #3: 预览渲染 — 单一 <canvas> 替代 N 个 div
+        //
+        // 原版问题根源：
+        //   N 个 div 用 background-image 拼接，浏览器合成层时
+        //   在相邻 div 边缘产生亚像素缝隙（GPU 光栅化误差），
+        //   outline/margin 等 CSS hack 只能部分掩盖，无法根治。
+        //
+        // 修复方案：
+        //   isoGrid 内创建单个 <canvas>，用 ctx.drawImage() 
+        //   整像素绘制每个 tile，坐标全部 Math.round()。
+        //   同一个 canvas 上的像素物理连续，无任何合成缝隙。
+        //
+        // 严格等轴铺贴公式：
+        //   偶数行: x = col * tileW
+        //   奇数行: x = col * tileW + tileW/2
+        //   行距:   rowStep = Math.round(tileH / 2) + overlap
+        // =====================================================
+        function updatePreview() {
+            if (!canvas.width) return;
+
+            const ROWS = 7, COLS = 6;
+            const tW = canvas.width, tH = canvas.height;
+            const overlap = parseInt(overlapRange.value);
+            const rowStep = Math.round(tH / 2) + overlap;
+
+            const totalW = Math.round(COLS * tW + tW / 2);
+            const totalH = Math.round(ROWS * rowStep + tH);
+
+            // 复用已有 gridCanvas，避免重复创建 DOM
+            let gridCanvas = isoGrid.querySelector('canvas');
+            if (!gridCanvas) {
+                gridCanvas = document.createElement('canvas');
+                gridCanvas.style.imageRendering = 'pixelated';
+                gridCanvas.style.display = 'block';
+                isoGrid.innerHTML = '';
+                isoGrid.appendChild(gridCanvas);
+            }
+            gridCanvas.width  = totalW;
+            gridCanvas.height = totalH;
+
+            const gctx = gridCanvas.getContext('2d');
+            gctx.clearRect(0, 0, totalW, totalH);
+
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    // Math.round() 确保整像素，消除浮点累积误差
+                    const x = Math.round(c * tW + (r % 2 === 1 ? tW / 2 : 0));
+                    const y = Math.round(r * rowStep);
+                    gctx.drawImage(canvas, x, y);
+                }
+            }
+
+            isoGrid.style.width      = `${totalW}px`;
+            isoGrid.style.height     = `${totalH}px`;
+            isoGrid.style.marginTop  = `-${Math.round(totalH / 2)}px`;
+            isoGrid.style.marginLeft = `-${Math.round(totalW / 2)}px`;
+            isoGrid.style.transform  = `scale(${previewScale})`;
+        }
+
+        window.changeScale = (v) => {
+            previewScale = Math.max(0.1, Math.min(4, previewScale + v));
+            isoGrid.style.transform = `scale(${previewScale})`;
+        };
+
+        // --- 原版滑动条绑定（完全保留）---
+        [surfaceRange, lumaRange, lumaDepthRange, satRange, wrapXRange, wrapYRange, blendRange, jitterRange, overlapRange].forEach(input => {
+            input.oninput = (e) => {
+                const id = e.target.id.replace('Range', 'Val');
+                const suffix = e.target.id.includes('overlap') ? 'px' : '%';
+                document.getElementById(id).innerText = e.target.value + suffix;
+                updateGuide(); if (e.target.id === 'overlapRange') updatePreview();
+            };
+        });
+
+        document.getElementById('resetBtn').onclick = () => {
+            if(originalImg){ canvas.width=originalImg.width; canvas.height=originalImg.height; ctx.drawImage(originalImg,0,0); updatePreview(); updateGuide(); }
+        };
+        document.getElementById('downloadBtn').onclick = () => {
+            const link=document.createElement('a'); link.download='v15_master_tile.png'; link.href=canvas.toDataURL(); link.click();
+        };
+        window.onresize = updateGuide;
+
+    </script>
+</body>
+</html>

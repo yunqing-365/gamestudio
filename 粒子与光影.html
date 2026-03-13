@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atmosphere FX Studio v9.1 - 终极全收录版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .pixelated { image-rendering: pixelated; image-rendering: crisp-edges; }
+        .checkerboard {
+            background-image: linear-gradient(45deg, #1e293b 25%, transparent 25%), 
+                              linear-gradient(-45deg, #1e293b 25%, transparent 25%), 
+                              linear-gradient(45deg, transparent 75%, #1e293b 75%), 
+                              linear-gradient(-45deg, transparent 75%, #1e293b 75%);
+            background-size: 20px 20px; background-color: #0f172a;
+        }
+        .color-picker-wrapper input[type="color"] {
+            opacity: 0; width: 100%; height: 100%; cursor: pointer; position: absolute; top: 0; left: 0;
+        }
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 6px; background: #334155; border-radius: 10px; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 16px; width: 16px; border-radius: 10px;
+            background: #0ea5e9; cursor: pointer; margin-top: -5px; border: 3px solid #0f172a; transition: transform 0.1s;
+        }
+        input[type=range]::-webkit-slider-thumb:active { transform: scale(1.3); }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .toast {
+            visibility: hidden; opacity: 0; transition: opacity 0.3s, transform 0.3s;
+            transform: translateY(20px);
+        }
+        .toast.show { visibility: visible; opacity: 1; transform: translateY(0); }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-200 min-h-screen font-sans antialiased p-4 lg:p-8">
+
+    <div class="max-w-[1600px] mx-auto space-y-6 relative">
+        
+        <div id="toast" class="toast fixed top-8 left-1/2 -translate-x-1/2 z-50 bg-emerald-500 text-white px-6 py-3 rounded-full shadow-2xl shadow-emerald-500/30 font-black tracking-widest text-xs uppercase border-2 border-emerald-400">
+            ✅ 设置已保存至浏览器缓存
+        </div>
+
+        <header class="flex flex-col md:flex-row justify-between items-center bg-slate-800 p-6 rounded-3xl shadow-2xl border border-slate-700">
+            <div class="flex items-center gap-4">
+                <div class="w-14 h-14 bg-gradient-to-tr from-rose-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white text-2xl shadow-lg shadow-rose-500/30">💎</div>
+                <div>
+                    <h1 class="text-2xl font-black text-white tracking-tighter uppercase">Atmosphere <span class="text-rose-400">FX v9.1</span></h1>
+                    <p class="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em] mt-1">Ultimate Collection (13 Presets)</p>
+                </div>
+            </div>
+            <div class="flex gap-4 mt-6 md:mt-0">
+                <button onclick="exportSpriteSheet()" class="px-6 py-3 bg-rose-600 text-white text-xs font-black uppercase rounded-xl shadow-lg shadow-rose-600/30 hover:bg-rose-500 transition active:scale-95 tracking-widest flex items-center gap-2">
+                    💾 导出为无缝循环图集 (Sprite Sheet)
+                </button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            <div class="lg:col-span-5 space-y-6 max-h-[80vh] overflow-y-auto scrollbar-hide pr-2">
+                
+                <div class="bg-slate-800 p-6 rounded-[2rem] shadow-lg border border-slate-700 relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-rose-500"></div>
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest">1. 核心属性与分辨率</h3>
+                    </div>
+                    
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        <button onclick="setMaterial('glow')" id="mat-glow" class="flex-1 py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-slate-900 text-slate-400 border border-slate-700 transition-all">✨ 发光</button>
+                        <button onclick="setMaterial('maple')" id="mat-maple" class="flex-1 py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-slate-900 text-slate-400 border border-slate-700 transition-all">🍁 枫叶</button>
+                        <button onclick="setMaterial('petal')" id="mat-petal" class="flex-1 py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-slate-900 text-slate-400 border border-slate-700 transition-all">🌸 花瓣</button>
+                        <button onclick="setMaterial('leaf')" id="mat-leaf" class="flex-1 py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-slate-900 text-slate-400 border border-slate-700 transition-all">🌿 绿叶</button>
+                        <button onclick="setMaterial('coin')" id="mat-coin" class="flex-1 py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-slate-900 text-slate-400 border border-slate-700 transition-all">💰 金币</button>
+                        <button onclick="setMaterial('bubble')" id="mat-bubble" class="flex-1 py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-slate-900 text-slate-400 border border-slate-700 transition-all">🫧 气泡</button>
+                    </div>
+
+                    <div class="flex bg-slate-900 p-1.5 rounded-xl border border-slate-700">
+                        <button onclick="setRenderStyle('hd')" id="style-hd" class="flex-1 py-2 text-[10px] font-black uppercase rounded-lg text-slate-400 hover:text-white transition-all">🟢 高清平滑</button>
+                        <button onclick="setRenderStyle('retro')" id="style-retro" class="flex-1 py-2 text-[10px] font-black uppercase rounded-lg bg-rose-600 text-white shadow-sm transition-all">👾 复古像素</button>
+                    </div>
+                </div>
+
+                <div class="bg-slate-800 p-6 rounded-[2rem] shadow-lg border border-slate-700">
+                    <div class="flex justify-between items-center border-b border-slate-700 pb-3 mb-4">
+                        <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest">2. 终极配方库 (Presets)</h3>
+                        <span class="text-[9px] text-emerald-400 font-medium">13 种效果完整收录</span>
+                    </div>
+
+                    <div class="space-y-5">
+                        <div>
+                            <p class="text-[10px] font-bold text-slate-500 mb-2">📦 实体生态 (Flora & Objects)</p>
+                            <div class="grid grid-cols-3 gap-2">
+                                <button onclick="applyPreset('maple_leaves')" id="pre-maple_leaves" class="py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-orange-900/50 hover:bg-orange-800/80 text-orange-200 transition-all border border-orange-700/50 shadow-sm">🍁 漫山红枫</button>
+                                <button onclick="applyPreset('solid_flowers')" id="pre-solid_flowers" class="py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-all border border-slate-600 shadow-sm">🌸 樱花飘零</button>
+                                <button onclick="applyPreset('solid_leaves')" id="pre-solid_leaves" class="py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-all border border-slate-600 shadow-sm">🌿 腐林落叶</button>
+                                <button onclick="applyPreset('solid_coins')" id="pre-solid_coins" class="py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-yellow-900/40 hover:bg-yellow-800/60 text-yellow-200 transition-all border border-yellow-700/50 shadow-sm">💰 散落金币</button>
+                                <button onclick="applyPreset('solid_bubbles')" id="pre-solid_bubbles" class="py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-cyan-900/40 hover:bg-cyan-800/60 text-cyan-200 transition-all border border-cyan-700/50 shadow-sm">🫧 浮空泡泡</button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <p class="text-[10px] font-bold text-slate-500 mb-2">🌫️ 大气与光影 (Atmosphere & Halos)</p>
+                            <div class="grid grid-cols-4 gap-2">
+                                <button onclick="applyPreset('fog')" id="pre-fog" class="py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-all border border-slate-600 shadow-sm">🌫️ 迷雾</button>
+                                <button onclick="applyPreset('sun_halo')" id="pre-sun_halo" class="py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-all border border-slate-600 shadow-sm">☀️ 光晕</button>
+                                <button onclick="applyPreset('normal_rain')" id="pre-normal_rain" class="py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-all border border-slate-600 shadow-sm">🌧️ 下雨</button>
+                                <button onclick="applyPreset('snow')" id="pre-snow" class="py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-all border border-slate-600 shadow-sm">❄️ 飞雪</button>
+                                
+                                <button onclick="applyPreset('dust')" id="pre-dust" class="py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-all border border-slate-600 shadow-sm">✨ 尘埃</button>
+                                <button onclick="applyPreset('fireflies')" id="pre-fireflies" class="py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-lime-900/40 hover:bg-lime-800/60 text-lime-200 transition-all border border-lime-700/50 shadow-sm">🪲 萤火虫</button>
+                                <button onclick="applyPreset('embers')" id="pre-embers" class="py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-red-900/40 hover:bg-red-800/60 text-red-200 transition-all border border-red-700/50 shadow-sm">🔥 火星</button>
+                                <button onclick="applyPreset('magic')" id="pre-magic" class="py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-fuchsia-900/40 hover:bg-fuchsia-800/60 text-fuchsia-200 transition-all border border-fuchsia-700/50 shadow-sm">🔮 魔法</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-800 p-6 rounded-[2rem] shadow-lg border border-slate-700 space-y-6">
+                    <div class="flex justify-between items-center border-b border-slate-700 pb-3">
+                        <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                            3. 物理实验室
+                            <span id="currentPresetLabel" class="bg-rose-900/50 text-rose-300 px-2 py-0.5 rounded text-[9px]">当前: 默认</span>
+                        </h3>
+                        <button onclick="initParticles()" class="text-rose-400 hover:text-rose-300 transition text-[10px] font-bold">🔄 随机种子</button>
+                    </div>
+                    
+                    <div class="flex items-center gap-4">
+                        <div class="color-picker-wrapper w-12 h-12 rounded-xl border-2 border-slate-600 shadow-inner relative flex-shrink-0" style="background:#0ea5e9" id="fxColorBox">
+                            <input type="color" value="#0ea5e9" id="fxColor">
+                        </div>
+                        <div class="flex-1">
+                            <p class="text-[10px] font-black text-slate-400 uppercase">渲染染色 (Tint)</p>
+                        </div>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div>
+                            <div class="flex justify-between text-[10px] font-black text-slate-400 uppercase mb-2">
+                                <span>重力 (Gravity)</span><span id="gravVal" class="text-rose-400 font-mono">20</span>
+                            </div>
+                            <input type="range" id="paramGrav" min="-2000" max="2000" value="60" class="w-full">
+                        </div>
+
+                        <div>
+                            <div class="flex justify-between text-[10px] font-black text-slate-400 uppercase mb-2">
+                                <span>风力 (Wind)</span><span id="windVal" class="text-rose-400 font-mono">10</span>
+                            </div>
+                            <input type="range" id="paramWind" min="-2000" max="2000" value="30" class="w-full">
+                        </div>
+
+                        <div>
+                            <div class="flex justify-between text-[10px] font-black text-slate-400 uppercase mb-2">
+                                <span>空气湍流 (Turbulence)</span><span id="turbVal" class="text-rose-400 font-mono">15</span>
+                            </div>
+                            <input type="range" id="paramTurb" min="0" max="100" value="30" class="w-full">
+                        </div>
+
+                        <div>
+                            <div class="flex justify-between text-[10px] font-black text-slate-400 uppercase mb-2">
+                                <span>同屏数量 (Count)</span><span id="countVal" class="text-rose-400 font-mono">40</span>
+                            </div>
+                            <input type="range" id="paramCount" min="2" max="300" value="50" class="w-full">
+                        </div>
+
+                        <div>
+                            <div class="flex justify-between text-[10px] font-black text-slate-400 uppercase mb-2">
+                                <span>缩放尺寸 (Scale/Size)</span><span id="sizeVal" class="text-rose-400 font-mono">4</span>
+                            </div>
+                            <input type="range" id="paramSize" min="1" max="80" value="2" class="w-full">
+                        </div>
+                    </div>
+
+                    <div class="border-t border-slate-700 pt-4 mt-6 flex gap-3">
+                        <button onclick="saveCustomPreset()" class="flex-1 py-3 bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-500/50 text-emerald-400 text-[10px] font-black uppercase rounded-xl transition-all">
+                            💾 覆盖保存为默认
+                        </button>
+                        <button onclick="restoreOriginalPreset()" class="py-3 px-4 bg-slate-700 hover:bg-slate-600 border border-slate-600 text-slate-300 text-[10px] font-black uppercase rounded-xl transition-all">
+                            ↺ 恢复原厂
+                        </button>
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="lg:col-span-7">
+                <div class="bg-slate-800 p-2 rounded-[3rem] shadow-2xl border border-slate-700 h-full min-h-[600px] flex flex-col">
+                    <div class="flex justify-between items-center p-6 border-b border-slate-700/50">
+                        <span class="text-xs font-black uppercase text-slate-400 tracking-[0.2em] bg-slate-900 px-4 py-2 rounded-lg border border-slate-700">Live Preview</span>
+                        <div class="flex items-center gap-3">
+                            <span class="relative flex h-3 w-3">
+                              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                              <span class="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
+                            </span>
+                            <span class="text-[10px] font-bold text-rose-400 uppercase tracking-widest">Procedural Core</span>
+                        </div>
+                    </div>
+                    
+                    <div class="flex-1 checkerboard rounded-[2.5rem] m-2 overflow-hidden flex items-center justify-center relative shadow-inner">
+                        <canvas id="previewCanvas" width="512" height="512" class="max-w-full max-h-full pixelated drop-shadow-xl"></canvas>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 系统阶段一：自动生成像素风素材 (Asset Generator)
+        // ==========================================
+        const generatedAssets = {};
+
+        function buildPixelAsset(name, pixelGrid, colorPalette) {
+            const size = 8; 
+            const c = document.createElement('canvas');
+            c.width = size; c.height = size;
+            const ctx = c.getContext('2d');
+            for(let y=0; y<size; y++) {
+                for(let x=0; x<size; x++) {
+                    const val = pixelGrid[y][x];
+                    if(val !== ' ') { ctx.fillStyle = colorPalette[val]; ctx.fillRect(x, y, 1, 1); }
+                }
+            }
+            generatedAssets[name] = c;
+        }
+
+        buildPixelAsset('maple', [
+            '  11    ', ' 1211   ', '122221  ', '1232221 ', '122211  ', '  121   ', '  11    ', '  1     '
+        ], {'1': '#7f1d1d', '2': '#dc2626', '3': '#f97316'});
+
+        buildPixelAsset('petal', [
+            '        ', '  11    ', ' 1221   ', '122221  ', ' 12211  ', '  11    ', '        ', '        '
+        ], {'1': '#be185d', '2': '#f472b6'});
+
+        buildPixelAsset('leaf', [
+            '      1 ', '     121', '   11221', '  12221 ', ' 12221  ', '12211   ', '11      ', '        '
+        ], {'1': '#15803d', '2': '#4ade80'});
+
+        buildPixelAsset('coin', [
+            '  1111  ', ' 122221 ', '12322321', '12322321', '12322321', ' 122221 ', '  1111  ', '        '
+        ], {'1': '#b45309', '2': '#facc15', '3': '#fef08a'});
+
+        buildPixelAsset('bubble', [
+            '  1111  ', ' 1    1 ', '1  2   1', '1      1', '1      1', ' 1    1 ', '  1111  ', '        '
+        ], {'1': '#7dd3fc', '2': '#ffffff'});
+
+
+        // ==========================================
+        // 系统阶段二：物理渲染器与持久化核心
+        // ==========================================
+        const canvas = document.getElementById('previewCanvas');
+        const ctx = canvas.getContext('2d');
+        const offscreenCanvas = document.createElement('canvas');
+        const offCtx = offscreenCanvas.getContext('2d');
+        
+        let time = 0;
+        let animationFrameId;
+        let particles = [];
+        let currentPreset = 'maple_leaves'; 
+        let renderStyle = 'retro'; 
+        let currentMaterial = 'maple'; 
+
+        // 官方默认配方字典 (全部 13 种效果完整回归！)
+        const defaultPresets = {
+            maple_leaves:  { mat: 'maple', c: '#ffffff', g: 70, w: 35, t: 40, cnt: 45, s: 3.5 },
+            solid_flowers: { mat: 'petal', c: '#ffffff', g: 60, w: 20, t: 40, cnt: 50, s: 3 },
+            solid_leaves:  { mat: 'leaf', c: '#ffffff', g: 80, w: 50, t: 50, cnt: 40, s: 3 },
+            solid_coins:   { mat: 'coin', c: '#ffffff', g: 250, w: 0, t: 5, cnt: 30, s: 3 },
+            solid_bubbles: { mat: 'bubble', c: '#ffffff', g: -60, w: 10, t: 20, cnt: 50, s: 2 },
+            
+            fog:           { mat: 'glow', c: '#cbd5e1', g: 0, w: 20, t: 10, cnt: 15, s: 35 }, 
+            sun_halo:      { mat: 'glow', c: '#fef08a', g: -5, w: 5, t: 0, cnt: 6, s: 45 },  
+            normal_rain:   { mat: 'glow', c: '#a0b0c0', g: 800, w: 100, t: 10, cnt: 150, s: 2 },
+            snow:          { mat: 'glow', c: '#ffffff', g: 200, w: 50, t: 25, cnt: 100, s: 4 }, 
+            
+            dust:          { mat: 'glow', c: '#0ea5e9', g: 20, w: 10, t: 15, cnt: 60, s: 6 },
+            fireflies:     { mat: 'glow', c: '#a3e635', g: -10, w: 5, t: 40, cnt: 30, s: 8 }, 
+            embers:        { mat: 'glow', c: '#f97316', g: -250, w: -50, t: 40, cnt: 80, s: 6 }, 
+            magic:         { mat: 'glow', c: '#a855f7', g: -30, w: 0, t: 80, cnt: 60, s: 8 }     
+        };
+
+        // --- UI 参数绑定 ---
+        const uiConfig = {
+            color: document.getElementById('fxColor'), grav: document.getElementById('paramGrav'),
+            wind: document.getElementById('paramWind'), turb: document.getElementById('paramTurb'),
+            count: document.getElementById('paramCount'), size: document.getElementById('paramSize')
+        };
+
+        uiConfig.color.oninput = (e) => { document.getElementById('fxColorBox').style.background = e.target.value; };
+        uiConfig.grav.oninput = (e) => { document.getElementById('gravVal').innerText = e.target.value; };
+        uiConfig.wind.oninput = (e) => { document.getElementById('windVal').innerText = e.target.value; };
+        uiConfig.turb.oninput = (e) => { document.getElementById('turbVal').innerText = e.target.value; };
+        uiConfig.count.oninput = (e) => { document.getElementById('countVal').innerText = e.target.value; initParticles(); };
+        uiConfig.size.oninput = (e) => { document.getElementById('sizeVal').innerText = e.target.value; };
+
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}` : '255, 255, 255';
+        }
+
+        function showToast() {
+            const t = document.getElementById('toast');
+            t.classList.add('show');
+            setTimeout(() => { t.classList.remove('show'); }, 2000);
+        }
+
+        function saveCustomPreset() {
+            const customConfig = {
+                mat: currentMaterial,
+                c: uiConfig.color.value,
+                g: parseInt(uiConfig.grav.value),
+                w: parseInt(uiConfig.wind.value),
+                t: parseInt(uiConfig.turb.value),
+                cnt: parseInt(uiConfig.count.value),
+                s: parseFloat(uiConfig.size.value)
+            };
+            localStorage.setItem('fx_preset_' + currentPreset, JSON.stringify(customConfig));
+            document.getElementById('currentPresetLabel').innerText = "当前: [我修改的专属版]";
+            showToast();
+        }
+
+        function restoreOriginalPreset() {
+            localStorage.removeItem('fx_preset_' + currentPreset);
+            applyPreset(currentPreset); 
+        }
+
+        function applyPreset(type) {
+            currentPreset = type;
+            let config = { ...defaultPresets[type] }; 
+            let isCustom = false;
+
+            const savedData = localStorage.getItem('fx_preset_' + type);
+            if (savedData) {
+                try {
+                    const parsed = JSON.parse(savedData);
+                    config = { ...config, ...parsed }; 
+                    isCustom = true;
+                } catch(e) {}
+            }
+
+            document.querySelectorAll('[id^="pre-"]').forEach(btn => {
+                // 判断属于哪个色系高亮
+                let activeColor = "bg-rose-600 text-white border-rose-500 shadow-md";
+                btn.className = btn.id === 'pre-' + type 
+                    ? `py-2 px-1 text-[10px] font-black uppercase rounded-lg ${activeColor} transition-all`
+                    : "py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-all border border-slate-600 shadow-sm";
+            });
+
+            document.getElementById('currentPresetLabel').innerText = isCustom ? "当前: [我修改的专属版]" : "当前: 官方默认配置";
+
+            setMaterial(config.mat);
+            uiConfig.color.value = config.c; document.getElementById('fxColorBox').style.background = config.c;
+            uiConfig.grav.value = config.g; document.getElementById('gravVal').innerText = config.g;
+            uiConfig.wind.value = config.w; document.getElementById('windVal').innerText = config.w;
+            uiConfig.turb.value = config.t; document.getElementById('turbVal').innerText = config.t;
+            uiConfig.count.value = config.cnt; document.getElementById('countVal').innerText = config.cnt;
+            uiConfig.size.value = config.s; document.getElementById('sizeVal').innerText = config.s;
+            
+            initParticles();
+        }
+
+        function setRenderStyle(style) {
+            renderStyle = style;
+            const btnHd = document.getElementById('style-hd');
+            const btnRetro = document.getElementById('style-retro');
+            btnHd.className = style === 'hd' ? "flex-1 py-2 text-[10px] font-black uppercase rounded-lg bg-rose-600 text-white shadow-sm transition-all" : "flex-1 py-2 text-[10px] font-black uppercase rounded-lg text-slate-400 hover:text-white transition-all";
+            btnRetro.className = style === 'retro' ? "flex-1 py-2 text-[10px] font-black uppercase rounded-lg bg-rose-600 text-white shadow-sm transition-all" : "flex-1 py-2 text-[10px] font-black uppercase rounded-lg text-slate-400 hover:text-white transition-all";
+        }
+
+        function setMaterial(mat) {
+            currentMaterial = mat;
+            ['glow', 'maple', 'petal', 'leaf', 'coin', 'bubble'].forEach(m => {
+                const btn = document.getElementById(`mat-${m}`);
+                if (!btn) return;
+                btn.className = m === mat 
+                    ? "flex-1 py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-rose-600 text-white shadow-sm border border-rose-500 transition-all"
+                    : "flex-1 py-2 px-1 text-[10px] font-black uppercase rounded-lg bg-slate-900 text-slate-400 hover:text-white border border-slate-700 transition-all";
+            });
+        }
+
+        function getInternalRes() { return renderStyle === 'hd' ? 512 : 128; }
+
+        function initParticles() {
+            particles = [];
+            const count = parseInt(uiConfig.count.value);
+            for(let i = 0; i < count; i++) {
+                particles.push({
+                    startX: Math.random() * 512,       
+                    startY: Math.random() * 512,       
+                    timeOffset: Math.random(),         
+                    speedMod: 0.8 + Math.random() * 0.4, 
+                    sizeMod: 0.5 + Math.random() * 1.0,  
+                    wobblePhase: Math.random() * Math.PI * 2, 
+                    flipPhase: Math.random() * Math.PI * 2, 
+                    rotatePhase: Math.random() * Math.PI * 2, 
+                    rotateSpeed: (Math.random() - 0.5) * 4  
+                });
+            }
+        }
+
+        // 初始化
+        setRenderStyle('retro');
+        applyPreset('maple_leaves');
+
+        // --- 物理渲染主引擎 ---
+        function drawFrame(targetCtx, renderRes, t) {
+            const colorRgb = hexToRgb(uiConfig.color.value);
+            const grav = parseInt(uiConfig.grav.value);
+            const wind = parseInt(uiConfig.wind.value);
+            const turb = parseInt(uiConfig.turb.value);
+            const baseSize = parseFloat(uiConfig.size.value);
+            const scaleFactor = renderRes / 512;
+
+            targetCtx.globalCompositeOperation = currentMaterial === 'glow' ? 'lighter' : 'source-over'; 
+
+            particles.forEach(p => {
+                let age = (t + p.timeOffset) % 1.0; 
+                let alpha = Math.sin(age * Math.PI); 
+
+                // 萤火虫闪烁逻辑恢复
+                if (currentPreset === 'fireflies') {
+                    alpha = alpha * (0.3 + 0.7 * Math.sin(age * Math.PI * 20));
+                }
+
+                let moveY = grav * p.speedMod * age;
+                let moveX = wind * p.speedMod * age;
+                let wobbleX = Math.sin(age * Math.PI * 4 + p.wobblePhase) * turb;
+
+                let currentX = ((p.startX + moveX + wobbleX) % 512 + 512) % 512;
+                let currentY = ((p.startY + moveY) % 512 + 512) % 512;
+
+                let drawX = currentX * scaleFactor;
+                let drawY = currentY * scaleFactor;
+                let drawSize = Math.max(0.5, (baseSize * p.sizeMod) * scaleFactor); 
+                
+                targetCtx.save();
+                targetCtx.translate(drawX, drawY);
+                
+                if (currentMaterial === 'glow') {
+                    // 🌫️ 迷雾
+                    if (currentPreset === 'fog') {
+                        targetCtx.scale(3.0, 0.8);
+                        targetCtx.globalAlpha = Math.max(0, alpha * 0.4); 
+                        const pGradient = targetCtx.createRadialGradient(0, 0, 0, 0, 0, drawSize);
+                        pGradient.addColorStop(0, `rgba(${colorRgb}, ${alpha * 0.5})`);
+                        pGradient.addColorStop(1, `rgba(${colorRgb}, 0)`); 
+                        targetCtx.fillStyle = pGradient;
+                        targetCtx.beginPath(); targetCtx.arc(0, 0, drawSize, 0, Math.PI * 2); targetCtx.fill();
+                    } 
+                    // ☀️ 光晕
+                    else if (currentPreset === 'sun_halo') {
+                        targetCtx.globalAlpha = Math.max(0, alpha * 0.6); 
+                        const pulseScale = 1 + Math.sin(age * Math.PI) * 0.3;
+                        const haloSize = drawSize * pulseScale;
+                        const pGradient = targetCtx.createRadialGradient(0, 0, 0, 0, 0, haloSize);
+                        pGradient.addColorStop(0, `rgba(255, 255, 255, ${alpha * 0.8})`); 
+                        pGradient.addColorStop(0.2, `rgba(${colorRgb}, ${alpha * 0.5})`); 
+                        pGradient.addColorStop(1, `rgba(${colorRgb}, 0)`); 
+                        targetCtx.fillStyle = pGradient;
+                        targetCtx.beginPath(); targetCtx.arc(0, 0, haloSize, 0, Math.PI * 2); targetCtx.fill();
+                    }
+                    // 🌧️ 下雨
+                    else if (currentPreset === 'normal_rain') {
+                        targetCtx.globalAlpha = Math.max(0, alpha);
+                        targetCtx.rotate(Math.atan2(wind, grav));
+                        const rainLength = drawSize * 2.5; 
+                        const rainWidth = drawSize * 0.7;
+                        const pGradient = targetCtx.createRadialGradient(0, 0, 0, 0, 0, rainLength);
+                        pGradient.addColorStop(0, `rgba(${colorRgb}, ${alpha})`); 
+                        pGradient.addColorStop(1, `rgba(${colorRgb}, 0)`); 
+                        targetCtx.fillStyle = pGradient;
+                        targetCtx.beginPath(); targetCtx.ellipse(0, 0, rainWidth, rainLength, 0, 0, Math.PI * 2); targetCtx.fill();
+                    } 
+                    // 常规发光
+                    else {
+                        targetCtx.globalAlpha = Math.max(0, alpha);
+                        const pGradient = targetCtx.createRadialGradient(0, 0, 0, 0, 0, drawSize);
+                        pGradient.addColorStop(0, `rgba(255, 255, 255, ${alpha})`); 
+                        pGradient.addColorStop(0.3, `rgba(${colorRgb}, ${alpha * 0.8})`); 
+                        pGradient.addColorStop(1, `rgba(${colorRgb}, 0)`); 
+                        targetCtx.fillStyle = pGradient;
+                        targetCtx.beginPath(); targetCtx.arc(0, 0, drawSize, 0, Math.PI * 2); targetCtx.fill();
+                    }
+                } else {
+                    const img = generatedAssets[currentMaterial];
+                    if (img) {
+                        targetCtx.globalAlpha = Math.max(0.1, alpha); 
+
+                        if (['maple', 'petal', 'leaf', 'coin'].includes(currentMaterial)) {
+                            const currentRotation = age * Math.PI * 2 * p.rotateSpeed + p.rotatePhase;
+                            targetCtx.rotate(currentRotation);
+                            const flipScale = Math.sin(age * Math.PI * 6 + p.flipPhase);
+                            targetCtx.scale(flipScale, 1);
+                        } else if (currentMaterial === 'bubble') {
+                            targetCtx.scale(0.9, 1.1);
+                        }
+
+                        const finalWidth = img.width * drawSize;
+                        const finalHeight = img.height * drawSize;
+                        targetCtx.drawImage(img, -finalWidth/2, -finalHeight/2, finalWidth, finalHeight);
+                    }
+                }
+                
+                targetCtx.restore();
+            });
+            
+            targetCtx.globalCompositeOperation = 'source-over';
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            time += 0.002; 
+            if (time > 1) time -= 1; 
+
+            const res = getInternalRes();
+            offscreenCanvas.width = res;
+            offscreenCanvas.height = res;
+            offCtx.clearRect(0, 0, res, res);
+
+            offCtx.imageSmoothingEnabled = false;
+            drawFrame(offCtx, res, time);
+
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(offscreenCanvas, 0, 0, res, res, 0, 0, 512, 512);
+
+            animationFrameId = requestAnimationFrame(animate);
+        }
+        animate();
+
+        function exportSpriteSheet() {
+            const btn = document.querySelector('button[onclick="exportSpriteSheet()"]');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = "⏳ 正在烘焙像素图集...";
+
+            let res = getInternalRes();
+            const frameW = res === 512 ? 256 : res; 
+            const frameH = res === 512 ? 256 : res; 
+            const cols = 4;
+            const rows = 4;
+            const totalFrames = cols * rows; 
+
+            const exportCanvas = document.createElement('canvas');
+            exportCanvas.width = frameW * cols;
+            exportCanvas.height = frameH * rows;
+            const eCtx = exportCanvas.getContext('2d');
+            eCtx.imageSmoothingEnabled = false; 
+
+            for (let i = 0; i < totalFrames; i++) {
+                const frameTime = i / totalFrames; 
+                const col = i % cols;
+                const row = Math.floor(i / cols);
+                
+                const frameCanvas = document.createElement('canvas');
+                frameCanvas.width = res; 
+                frameCanvas.height = res;
+                const fCtx = frameCanvas.getContext('2d');
+                fCtx.imageSmoothingEnabled = false;
+                
+                drawFrame(fCtx, res, frameTime);
+                eCtx.drawImage(frameCanvas, 0, 0, res, res, col * frameW, row * frameH, frameW, frameH);
+            }
+
+            exportCanvas.toBlob(blob => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Pixel_FX_${currentPreset}_${frameW}px_4x4.png`;
+                a.click();
+                btn.innerHTML = originalText;
+            }, 'image/png');
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sprite Sheet Packer - 智能图集打包器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        .pixelated { image-rendering: pixelated; image-rendering: crisp-edges; }
+        .checkerboard {
+            background-image: linear-gradient(45deg, #f1f5f9 25%, transparent 25%), 
+                              linear-gradient(-45deg, #f1f5f9 25%, transparent 25%), 
+                              linear-gradient(45deg, transparent 75%, #f1f5f9 75%), 
+                              linear-gradient(-45deg, transparent 75%, #f1f5f9 75%);
+            background-size: 16px 16px; background-color: #ffffff;
+        }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen font-sans antialiased p-4 lg:p-10">
+
+    <div class="max-w-[1600px] mx-auto space-y-8">
+        <header class="flex flex-col md:flex-row justify-between items-center bg-white p-8 rounded-[3rem] shadow-xl border border-slate-100">
+            <div class="flex items-center gap-6">
+                <div class="w-16 h-16 bg-gradient-to-tr from-blue-600 to-indigo-500 rounded-2xl flex items-center justify-center text-white text-3xl shadow-lg">📦</div>
+                <div>
+                    <h1 class="text-3xl font-black text-slate-900 tracking-tighter uppercase italic">Sprite Packer <span class="text-blue-600">Pro</span></h1>
+                    <p class="text-slate-400 text-xs font-bold uppercase tracking-[0.3em] mt-1">2D Bin Packing Engine</p>
+                </div>
+            </div>
+            <div class="flex gap-4 mt-6 md:mt-0">
+                <button onclick="document.getElementById('fileInput').click()" class="px-6 py-3 bg-slate-900 text-white text-xs font-black uppercase rounded-xl shadow-lg hover:bg-slate-800 transition active:scale-95 tracking-widest">
+                    ➕ 导入零散帧
+                </button>
+                <button id="downloadBtn" class="px-6 py-3 bg-blue-600 text-white text-xs font-black uppercase rounded-xl shadow-lg shadow-blue-200 hover:bg-blue-700 transition active:scale-95 tracking-widest hidden">
+                    💾 打包下载 (ZIP)
+                </button>
+            </div>
+            <input type="file" id="fileInput" class="hidden" multiple accept="image/png, image/jpeg, image/webp">
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            <div class="lg:col-span-4 space-y-8">
+                <div class="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
+                    <h3 class="text-xs font-black text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-4 mb-6">打包参数 (Pack Settings)</h3>
+                    
+                    <div class="space-y-6">
+                        <div>
+                            <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">最大画布宽度 (Max Width)</label>
+                            <select id="maxWidth" class="mt-2 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm focus:outline-none focus:ring-2 ring-blue-500">
+                                <option value="512">512 px</option>
+                                <option value="1024">1024 px</option>
+                                <option value="2048" selected>2048 px</option>
+                                <option value="4096">4096 px</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">最大画布高度 (Max Height)</label>
+                            <select id="maxHeight" class="mt-2 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm focus:outline-none focus:ring-2 ring-blue-500">
+                                <option value="512">512 px</option>
+                                <option value="1024">1024 px</option>
+                                <option value="2048" selected>2048 px</option>
+                                <option value="4096">4096 px</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">像素间距 (Padding)</label>
+                            <input type="number" id="padding" value="2" min="0" max="20" class="mt-2 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm focus:outline-none focus:ring-2 ring-blue-500">
+                            <p class="text-[9px] text-slate-400 mt-2">防止游戏引擎渲染时产生边缘像素溢出(Bleeding)。</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900 p-8 rounded-[2.5rem] shadow-xl flex flex-col h-[400px]">
+                    <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest border-b border-slate-700 pb-4 mb-4">JSON 数据预览</h3>
+                    <textarea id="jsonOutput" class="flex-1 w-full bg-transparent text-emerald-400 font-mono text-xs resize-none outline-none scrollbar-hide" readonly placeholder="导入图片后生成游戏引擎所需的数据..."></textarea>
+                </div>
+            </div>
+
+            <div class="lg:col-span-8">
+                <div class="bg-white p-2 rounded-[3rem] shadow-xl border border-slate-100 h-full min-h-[700px] flex flex-col">
+                    <div class="flex justify-between items-center p-6 border-b border-slate-50">
+                        <span class="text-xs font-black uppercase text-slate-400 tracking-[0.2em] bg-slate-50 px-4 py-2 rounded-lg">Render Preview</span>
+                        <span id="canvasInfo" class="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-4 py-2 rounded-lg border border-blue-100">Waiting...</span>
+                    </div>
+                    
+                    <div class="flex-1 checkerboard rounded-[2.5rem] m-2 overflow-auto flex items-center justify-center p-8 relative border-4 border-slate-50 shadow-inner">
+                        <canvas id="packCanvas" class="pixelated shadow-2xl ring-1 ring-slate-200/50 max-w-full max-h-full object-contain"></canvas>
+                        <div id="emptyState" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                            <div class="text-6xl mb-4 opacity-50">🧩</div>
+                            <p class="font-black text-slate-400 uppercase tracking-widest text-sm">等待导入图像素材</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- 核心装箱算法 (Binary Tree Bin Packing) ---
+        class Packer {
+            constructor(w, h) {
+                this.root = { x: 0, y: 0, w: w, h: h };
+            }
+            fit(blocks) {
+                let n, node, block;
+                for (n = 0; n < blocks.length; n++) {
+                    block = blocks[n];
+                    if (node = this.findNode(this.root, block.w, block.h)) {
+                        block.fit = this.splitNode(node, block.w, block.h);
+                    }
+                }
+            }
+            findNode(root, w, h) {
+                if (root.used)
+                    return this.findNode(root.right, w, h) || this.findNode(root.down, w, h);
+                else if ((w <= root.w) && (h <= root.h))
+                    return root;
+                else
+                    return null;
+            }
+            splitNode(node, w, h) {
+                node.used = true;
+                node.down  = { x: node.x,     y: node.y + h, w: node.w,     h: node.h - h };
+                node.right = { x: node.x + w, y: node.y,     w: node.w - w, h: h          };
+                return node;
+            }
+        }
+
+        // --- 全局状态 ---
+        const fileInput = document.getElementById('fileInput');
+        const packCanvas = document.getElementById('packCanvas');
+        const ctx = packCanvas.getContext('2d');
+        const jsonOutput = document.getElementById('jsonOutput');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const emptyState = document.getElementById('emptyState');
+        
+        let packedData = null; // 存储生成的 JSON 对象
+        let fileNameBase = "spritesheet";
+
+        // --- 处理流程 ---
+        fileInput.addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
+            if (files.length === 0) return;
+
+            emptyState.classList.add('hidden');
+            fileNameBase = files[0].name.split('.')[0] + "_atlas"; // 使用第一张图的名字作为图集基准名
+
+            // 1. 读取并加载所有图片
+            const images = await Promise.all(files.map(file => {
+                return new Promise((resolve) => {
+                    const img = new Image();
+                    img.onload = () => resolve({ img: img, name: file.name, w: img.width, h: img.height });
+                    img.src = URL.createObjectURL(file);
+                });
+            }));
+
+            // 2. 准备装箱数据 (包含 Padding)
+            const padding = parseInt(document.getElementById('padding').value) || 0;
+            const blocks = images.map(item => ({
+                w: item.w + padding,
+                h: item.h + padding,
+                item: item
+            }));
+
+            // 3. 排序：按高度降序排列，有助于装箱算法塞得更紧凑
+            blocks.sort((a, b) => b.h - a.h);
+
+            // 4. 执行装箱算法
+            const maxWidth = parseInt(document.getElementById('maxWidth').value);
+            const maxHeight = parseInt(document.getElementById('maxHeight').value);
+            const packer = new Packer(maxWidth, maxHeight);
+            packer.fit(blocks);
+
+            // 5. 计算实际占用的边界 (Bounding Box)，用于自适应裁切画布
+            let actualW = 0, actualH = 0;
+            const successfulBlocks = blocks.filter(b => b.fit);
+            
+            if(successfulBlocks.length < blocks.length) {
+                alert(`警告：画布太小！${blocks.length} 张图中只有 ${successfulBlocks.length} 张放得下。请调大最大画布尺寸。`);
+            }
+
+            successfulBlocks.forEach(b => {
+                if (b.fit.x + b.w > actualW) actualW = b.fit.x + b.w;
+                if (b.fit.y + b.h > actualH) actualH = b.fit.y + b.h;
+            });
+
+            // 6. 渲染到 Canvas
+            packCanvas.width = actualW;
+            packCanvas.height = actualH;
+            ctx.clearRect(0, 0, actualW, actualH);
+
+            const framesJSON = {};
+
+            successfulBlocks.forEach(b => {
+                // 绘制图像（去掉右边和下边的 Padding 以保持原始尺寸）
+                ctx.drawImage(b.item.img, b.fit.x, b.fit.y, b.item.w, b.item.h);
+                
+                // 记录数据 (符合 TexturePacker 等主流引擎格式)
+                framesJSON[b.item.name] = {
+                    frame: { x: b.fit.x, y: b.fit.y, w: b.item.w, h: b.item.h },
+                    rotated: false,
+                    trimmed: false,
+                    spriteSourceSize: { x: 0, y: 0, w: b.item.w, h: b.item.h },
+                    sourceSize: { w: b.item.w, h: b.item.h }
+                };
+            });
+
+            // 7. 生成并展示 JSON
+            packedData = {
+                frames: framesJSON,
+                meta: {
+                    app: "Asset Master Sprite Packer",
+                    version: "1.0",
+                    image: fileNameBase + ".png",
+                    format: "RGBA8888",
+                    size: { w: actualW, h: actualH },
+                    scale: "1"
+                }
+            };
+
+            jsonOutput.value = JSON.stringify(packedData, null, 2);
+            document.getElementById('canvasInfo').innerText = `Final Size: ${actualW} x ${actualH} PX`;
+            downloadBtn.classList.remove('hidden');
+            
+            // 清理内存
+            fileInput.value = "";
+        });
+
+        // --- 打包下载 (ZIP) ---
+        downloadBtn.addEventListener('click', async () => {
+            if (!packedData) return;
+            
+            const zip = new JSZip();
+            const btn = document.getElementById('downloadBtn');
+            const originalText = btn.innerText;
+            btn.innerText = "🔄 打包中...";
+
+            // 1. 将 Canvas 转为 PNG Blob 并存入 ZIP
+            const imageBlob = await new Promise(resolve => packCanvas.toBlob(resolve, 'image/png'));
+            zip.file(fileNameBase + ".png", imageBlob);
+
+            // 2. 将 JSON 数据存入 ZIP
+            zip.file(fileNameBase + ".json", JSON.stringify(packedData, null, 2));
+
+            // 3. 生成并下载压缩包
+            const zipBlob = await zip.generateAsync({type:"blob"});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(zipBlob);
+            a.download = fileNameBase + "_package.zip";
+            a.click();
+
+            btn.innerText = originalText;
+        });
+    </script>
+</body>
+</html>

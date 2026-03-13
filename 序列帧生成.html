@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Water Animator v1.3 - 模式增强版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .pixelated { image-rendering: pixelated; image-rendering: crisp-edges; }
+        .checkerboard {
+            background-image: linear-gradient(45deg, #f1f5f9 25%, transparent 25%), 
+                              linear-gradient(-45deg, #f1f5f9 25%, transparent 25%), 
+                              linear-gradient(45deg, transparent 75%, #f1f5f9 75%), 
+                              linear-gradient(-45deg, transparent 75%, #f1f5f9 75%);
+            background-size: 12px 12px;
+            background-color: #ffffff;
+        }
+        canvas { border-radius: 12px; max-width: 100%; height: auto; }
+        .frame-card {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 2px solid transparent;
+        }
+        .frame-card:hover { border-color: #3b82f6; transform: translateY(-6px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 6px; background: #e2e8f0; border-radius: 10px; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 22px; width: 22px; border-radius: 50%;
+            background: #3b82f6; cursor: pointer; margin-top: -8px; border: 3px solid white;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .drop-zone { transition: all 0.3s ease; }
+        .drop-zone.drag-over { background-color: #eff6ff; border-color: #3b82f6; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.5rem center; background-size: 1.5em 1.5em; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen font-sans antialiased">
+    <div class="max-w-7xl mx-auto p-6 lg:p-12 space-y-8">
+        <header class="flex flex-col md:flex-row justify-between items-center bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100">
+            <div class="flex items-center gap-6">
+                <div class="w-16 h-16 bg-gradient-to-tr from-blue-600 to-cyan-500 rounded-[1.5rem] flex items-center justify-center text-white text-3xl shadow-lg rotate-2">🎬</div>
+                <div>
+                    <h1 class="text-3xl font-black text-slate-900 tracking-tighter uppercase italic">Water Animator <span class="text-blue-600 font-black">v1.3</span></h1>
+                    <p class="text-slate-400 text-[10px] font-bold uppercase tracking-[0.4em] mt-1">Multi-Mode Loop Frame Generator</p>
+                </div>
+            </div>
+            <div class="flex gap-4 mt-6 md:mt-0">
+                <button id="exportAllBtn" class="px-10 py-4 bg-emerald-600 text-white rounded-2xl text-xs font-black uppercase shadow-xl shadow-emerald-100 hover:bg-emerald-500 transition active:scale-95 tracking-widest">导出 8 帧序列</button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-10">
+            <div class="lg:col-span-4 space-y-8">
+                <div id="dropZone" class="bg-white p-8 rounded-[3rem] shadow-2xl border border-slate-100 drop-zone relative">
+                    <h3 class="text-[10px] font-black text-slate-300 uppercase tracking-[0.3em] mb-6">Real-time Preview / 实时预览</h3>
+                    <div id="previewWrapper" class="checkerboard aspect-square rounded-[2rem] flex items-center justify-center overflow-hidden border-2 border-slate-50 shadow-inner group">
+                        <canvas id="previewCanvas" class="pixelated scale-125 transition-transform duration-500 group-hover:scale-150"></canvas>
+                        <div id="uploadOverlay" class="absolute inset-0 flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50/40 transition-all z-10" onclick="document.getElementById('fileInput').click()">
+                            <div class="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-xl mb-6">
+                                <span class="text-4xl text-blue-500">➕</span>
+                            </div>
+                            <p class="text-xs font-black text-slate-400 uppercase tracking-widest">导入首帧图开始设计</p>
+                        </div>
+                    </div>
+                    <div class="mt-8 flex justify-between items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                        <span id="frameCounter" class="text-[10px] font-mono font-black text-blue-600 uppercase tracking-widest">Frame: 0 / 8</span>
+                        <div class="flex gap-3">
+                            <button id="playPauseBtn" class="w-10 h-10 flex items-center justify-center bg-slate-900 text-white rounded-xl text-sm hover:bg-blue-600 transition shadow-lg">⏸</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-8 rounded-[3rem] shadow-2xl border border-slate-100 space-y-8">
+                    <div class="border-b pb-4 mb-4">
+                        <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">动画模式 Animation Mode</h3>
+                        <select id="animMode" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                            <option value="natural">🌊 自然表面波动 (Natural)</option>
+                            <option value="concentric">🔘 圆周扩散涟漪 (Concentric)</option>
+                            <option value="flow">➡️ 溪流定向移动 (Directional Flow)</option>
+                        </select>
+                    </div>
+                    <div class="space-y-6">
+                        <div class="space-y-3">
+                            <div class="flex justify-between text-[11px] font-bold text-slate-600">
+                                <span>波动强度 (Amplitude)</span>
+                                <span id="ampVal" class="text-blue-600 font-mono">2.5 px</span>
+                            </div>
+                            <input type="range" id="ampRange" min="0.1" max="15" step="0.1" value="2.5" class="w-full">
+                        </div>
+                        <div class="space-y-3">
+                            <div class="flex justify-between text-[11px] font-bold text-slate-600">
+                                <span>波纹频率/密集度 (Freq)</span>
+                                <span id="freqVal" class="text-blue-600 font-mono">0.05</span>
+                            </div>
+                            <input type="range" id="freqRange" min="0.01" max="0.5" step="0.01" value="0.05" class="w-full">
+                        </div>
+
+                        <!-- ── 仅 flow 模式显示的方向控件 ── -->
+                        <div id="dirRow" class="space-y-3 hidden">
+                            <div class="flex justify-between text-[11px] font-bold text-slate-600">
+                                <span>流动方向 (Direction)</span>
+                                <span id="dirVal" class="text-blue-600 font-mono">→ 正右</span>
+                            </div>
+                            <select id="dirSelect" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="0">→ 正右（等轴测：右下）</option>
+                                <option value="1">↙ 左下（等轴测：正下）</option>
+                                <option value="2">← 正左（等轴测：左上）</option>
+                                <option value="3">↗ 右上（等轴测：正上）</option>
+                            </select>
+                        </div>
+
+                        <div class="space-y-3">
+                            <div class="flex justify-between text-[11px] font-bold text-slate-600">
+                                <span>帧率 (FPS)</span>
+                                <span id="fpsVal" class="text-blue-600 font-mono">12</span>
+                            </div>
+                            <input type="range" id="fpsRange" min="1" max="30" value="12" class="w-full">
+                        </div>
+                    </div>
+                    <div class="pt-6 border-t border-slate-50">
+                        <input type="file" id="fileInput" class="hidden" accept="image/*">
+                        <button onclick="document.getElementById('fileInput').click()" class="w-full py-4 bg-slate-900 text-white text-[11px] font-black uppercase rounded-2xl shadow-xl hover:bg-blue-600 transition tracking-widest">更换素材图</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-8 bg-white p-10 rounded-[4rem] shadow-2xl border border-slate-100 flex flex-col h-[850px]">
+                <div class="flex justify-between items-center mb-8 px-2">
+                    <h2 class="text-xs font-black uppercase text-slate-400 tracking-[0.5em]">Sequence Generator / 导出预览</h2>
+                    <span class="text-[9px] font-bold text-blue-500 bg-blue-50 px-3 py-1 rounded-full border border-blue-100 uppercase">Auto-Looping</span>
+                </div>
+                <div id="framesGrid" class="flex-1 grid grid-cols-2 md:grid-cols-4 gap-6 overflow-y-auto pr-2 scrollbar-hide"></div>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const previewCanvas = document.getElementById('previewCanvas');
+    const pCtx = previewCanvas.getContext('2d');
+    const framesGrid = document.getElementById('framesGrid');
+    const ampRange   = document.getElementById('ampRange');
+    const freqRange  = document.getElementById('freqRange');
+    const fpsRange   = document.getElementById('fpsRange');
+    const animMode   = document.getElementById('animMode');
+    const dirSelect  = document.getElementById('dirSelect');
+    const frameCounter = document.getElementById('frameCounter');
+    const overlay    = document.getElementById('uploadOverlay');
+    const dropZone   = document.getElementById('dropZone');
+
+    let originalImg = null;
+    let srcData = null;   // cached ImageData of source
+    let srcW = 0, srcH = 0;
+    let frames = [];
+    let currentFrameIdx = 0;
+    let isPlaying = true;
+    let lastTime = 0;
+
+    // ── 文件加载 ──────────────────────────────────────────────
+    const fileInput = document.getElementById('fileInput');
+    fileInput.onchange = (e) => handleFiles(e.target.files);
+    dropZone.addEventListener('dragover',  (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault(); dropZone.classList.remove('drag-over'); handleFiles(e.dataTransfer.files);
+    });
+
+    function handleFiles(files) {
+        const file = files[0];
+        if (!file || !file.type.startsWith('image/')) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const img = new Image();
+            img.onload = () => {
+                originalImg = img;
+                srcW = img.width; srcH = img.height;
+
+                // 缓存源像素，只读一次
+                const tmpC = document.createElement('canvas');
+                tmpC.width = srcW; tmpC.height = srcH;
+                tmpC.getContext('2d').drawImage(img, 0, 0);
+                srcData = tmpC.getContext('2d').getImageData(0, 0, srcW, srcH);
+
+                overlay.classList.add('hidden');
+                previewCanvas.width  = srcW;
+                previewCanvas.height = srcH;
+                generateAllFrames();
+                if (lastTime === 0) requestAnimationFrame(animate);
+            };
+            img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // ── 双线性插值采样（带环绕）────────────────────────────────
+    // 相比 Math.floor，消除了锯齿感，运动更顺滑
+    function sampleBilinear(fx, fy) {
+        const w = srcW, h = srcH;
+        // 环绕到 [0, w) / [0, h)
+        fx = ((fx % w) + w) % w;
+        fy = ((fy % h) + h) % h;
+
+        const x0 = fx | 0,          y0 = fy | 0;
+        const x1 = (x0 + 1) % w,    y1 = (y0 + 1) % h;
+        const tx = fx - x0,          ty = fy - y0;
+        const d  = srcData.data;
+
+        const i00 = (y0 * w + x0) * 4;
+        const i10 = (y0 * w + x1) * 4;
+        const i01 = (y1 * w + x0) * 4;
+        const i11 = (y1 * w + x1) * 4;
+
+        const r = d[i00]   * (1-tx)*(1-ty) + d[i10]   * tx*(1-ty) + d[i01]   * (1-tx)*ty + d[i11]   * tx*ty;
+        const g = d[i00+1] * (1-tx)*(1-ty) + d[i10+1] * tx*(1-ty) + d[i01+1] * (1-tx)*ty + d[i11+1] * tx*ty;
+        const b = d[i00+2] * (1-tx)*(1-ty) + d[i10+2] * tx*(1-ty) + d[i01+2] * (1-tx)*ty + d[i11+2] * tx*ty;
+        const a = d[i00+3] * (1-tx)*(1-ty) + d[i10+3] * tx*(1-ty) + d[i01+3] * (1-tx)*ty + d[i11+3] * tx*ty;
+
+        return [r, g, b, a];
+    }
+
+    // ── 各模式位移计算 ────────────────────────────────────────
+    function getDisplacement(x, y, phase, amp, freq, mode) {
+        let dx = 0, dy = 0;
+
+        if (mode === 'natural') {
+            // 两组正交、不同频的正弦叠加 → 更自然的有机波感
+            // 等轴测校正：y方向幅度 × 0.5
+            dx =  amp       * Math.sin(x * freq       + y * freq * 0.4 + phase)
+               +  amp * 0.4 * Math.sin(x * freq * 1.7 - y * freq * 0.9 + phase * 1.3);
+            dy = (amp * 0.5 * Math.cos(y * freq       + x * freq * 0.4 + phase)
+               +  amp * 0.2 * Math.cos(y * freq * 1.7 - x * freq * 0.9 + phase * 1.3));
+
+        } else if (mode === 'concentric') {
+            // 等轴测涟漪：径向扩散，y 轴除以 2 恢复真实距离
+            const cx = srcW / 2, cy = srcH / 2;
+            const rx = x - cx;
+            const ry = (y - cy) * 2;          // 等轴测补偿
+            const dist = Math.sqrt(rx*rx + ry*ry) + 1e-6;
+            const ripple = amp * Math.sin(dist * freq - phase);
+            dx = (rx / dist) * ripple;
+            dy = ((ry / 2) / dist) * ripple;  // 屏幕空间 y 恢复
+
+        } else if (mode === 'flow') {
+            // ── 溪流定向移动（修复版）────────────────────────
+            //
+            // 原版 bug：用 linearPhase = frameIdx/total * w 做整体平移，
+            // 帧间距是线性累加而非周期性，导致最后一帧和第一帧之间
+            // 出现巨大跳变，并且整张图会漂移到画面之外，显示错乱。
+            //
+            // 修复思路：
+            //   1. 只用 phase (0→2π 循环) 驱动位移，保证帧间连续
+            //   2. 主流动方向：整张图在方向向量上做周期性整体平移
+            //      sx = x - dirX*amp_flow*sin(phase)  ← 对方向取样偏移
+            //   3. 叠加横向扰动（垂直方向的正弦），模拟溪流的蜿蜒感
+            //   4. 保留原始 alpha（不位移透明区域），瓦片形状不变形
+            //
+            // 等轴测方向向量（屏幕坐标系，2:1菱形）：
+            //   0=→右下  1=↓正下  2=←左上  3=↑正上
+            const dirs = [
+                [  1.0,  0.5 ],   // 右下 (等轴测"正右")
+                [ -1.0,  0.5 ],   // 左下 (等轴测"正下")
+                [ -1.0, -0.5 ],   // 左上 (等轴测"正左")
+                [  1.0, -0.5 ],   // 右上 (等轴测"正上")
+            ];
+            const [dirX, dirY] = dirs[parseInt(dirSelect.value)];
+
+            // 主流动：phase 驱动的整体平移，sin 保证循环
+            const flowAmp = amp * 4;           // 流动幅度比扰动大
+            const mainDx  = dirX * flowAmp * Math.sin(phase);
+            const mainDy  = dirY * flowAmp * Math.sin(phase);
+
+            // 蜿蜒扰动：垂直于主方向，产生溪流左右摇摆感
+            // 沿流动方向投影距离，用于驱动波形相位
+            const along = x * dirX + y * dirY;    // 沿主方向的投影
+            const turbDx = -dirY * amp * Math.sin(along * freq + phase);
+            const turbDy =  dirX * amp * Math.sin(along * freq + phase) * 0.5;
+
+            dx = mainDx + turbDx;
+            dy = mainDy + turbDy;
+        }
+
+        return [dx, dy];
+    }
+
+    // ── 生成单帧 ──────────────────────────────────────────────
+    function generateFrame(frameIdx, totalFrames) {
+        if (!srcData) return null;
+
+        const w = srcW, h = srcH;
+        const outCanvas = document.createElement('canvas');
+        outCanvas.width = w; outCanvas.height = h;
+        const ctx = outCanvas.getContext('2d');
+        const outData = ctx.createImageData(w, h);
+        const out = outData.data;
+        const src = srcData.data;
+
+        const amp   = parseFloat(ampRange.value);
+        const freq  = parseFloat(freqRange.value);
+        const mode  = animMode.value;
+        // phase 均匀分布在 [0, 2π)，frameIdx=0 和 frameIdx=totalFrames 相同 → 完美循环
+        const phase = (frameIdx / totalFrames) * Math.PI * 2;
+
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const oi = (y * w + x) * 4;
+
+                // flow 模式：透明像素保持透明，不参与采样（保持瓦片轮廓）
+                if (mode === 'flow' && src[oi + 3] < 5) {
+                    out[oi] = out[oi+1] = out[oi+2] = 0;
+                    out[oi+3] = 0;
+                    continue;
+                }
+
+                const [dx, dy] = getDisplacement(x, y, phase, amp, freq, mode);
+                const [r, g, b, a] = sampleBilinear(x + dx, y + dy);
+
+                // flow 模式保留原始 alpha（不让采样扭曲透明轮廓）
+                out[oi]   = r;
+                out[oi+1] = g;
+                out[oi+2] = b;
+                out[oi+3] = mode === 'flow' ? src[oi + 3] : a;
+            }
+        }
+
+        ctx.putImageData(outData, 0, 0);
+        return outCanvas;
+    }
+
+    // ── 生成全部 8 帧 ─────────────────────────────────────────
+    function generateAllFrames() {
+        if (!srcData) return;
+        frames = [];
+        framesGrid.innerHTML = '';
+        const total = 8;
+
+        for (let i = 0; i < total; i++) {
+            const fCanvas = generateFrame(i, total);
+            frames.push(fCanvas);
+
+            const card = document.createElement('div');
+            card.className = 'frame-card bg-slate-50 p-5 rounded-[2rem] flex flex-col items-center gap-4 cursor-pointer border border-slate-100';
+
+            const label = document.createElement('span');
+            label.className = 'text-[10px] font-black text-slate-400 uppercase tracking-widest';
+            label.innerText = `Frame ${i + 1}`;
+
+            const img = document.createElement('img');
+            img.className = 'pixelated w-full h-auto rounded-xl shadow-md';
+            img.src = fCanvas.toDataURL();
+
+            const dlBtn = document.createElement('button');
+            dlBtn.className = 'w-full py-2 bg-white text-blue-600 text-[10px] font-bold uppercase rounded-xl border border-blue-50 hover:bg-blue-600 hover:text-white transition';
+            dlBtn.innerText = '下载 PNG';
+            dlBtn.onclick = (e) => {
+                e.stopPropagation();
+                const a = document.createElement('a');
+                a.download = `water_${animMode.value}_f${i+1}.png`;
+                a.href = img.src; a.click();
+            };
+
+            card.appendChild(label); card.appendChild(img); card.appendChild(dlBtn);
+            framesGrid.appendChild(card);
+        }
+    }
+
+    // ── 动画循环 ──────────────────────────────────────────────
+    function animate(time) {
+        if (!lastTime) lastTime = time;
+        const fps = parseInt(fpsRange.value);
+        const interval = 1000 / fps;
+
+        if (time - lastTime >= interval) {
+            if (isPlaying && frames.length > 0) {
+                currentFrameIdx = (currentFrameIdx + 1) % frames.length;
+                pCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+                pCtx.drawImage(frames[currentFrameIdx], 0, 0);
+                frameCounter.innerText = `Frame: ${currentFrameIdx + 1} / 8`;
+            }
+            lastTime = time;
+        }
+        requestAnimationFrame(animate);
+    }
+
+    // ── 事件绑定 ──────────────────────────────────────────────
+    document.getElementById('playPauseBtn').onclick = (e) => {
+        isPlaying = !isPlaying; e.target.innerText = isPlaying ? '⏸' : '▶';
+    };
+
+    animMode.onchange = () => {
+        // flow 模式显示方向选择器
+        document.getElementById('dirRow').classList.toggle('hidden', animMode.value !== 'flow');
+        if (srcData) generateAllFrames();
+    };
+
+    dirSelect.onchange = () => { if (srcData) generateAllFrames(); };
+
+    [ampRange, freqRange].forEach(r => {
+        r.oninput = (e) => {
+            const id = e.target.id.replace('Range', 'Val');
+            const suffix = e.target.id === 'ampRange' ? ' px' : '';
+            document.getElementById(id).innerText = e.target.value + suffix;
+            if (srcData) generateAllFrames();
+        };
+    });
+
+    fpsRange.oninput = () => { document.getElementById('fpsVal').innerText = fpsRange.value; };
+
+    document.getElementById('exportAllBtn').onclick = () => {
+        if (frames.length === 0) return;
+        frames.forEach((f, i) => {
+            setTimeout(() => {
+                const a = document.createElement('a');
+                a.download = `water_${animMode.value}_loop_f${i+1}.png`;
+                a.href = f.toDataURL(); a.click();
+            }, i * 250);
+        });
+    };
+</script>
+</body>
+</html>

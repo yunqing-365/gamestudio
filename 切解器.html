@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sprite Slicer Pro - 智能切解器 v3.1</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        .pixelated { image-rendering: pixelated; image-rendering: crisp-edges; }
+        .checkerboard {
+            background-image: linear-gradient(45deg, #f1f5f9 25%, transparent 25%), 
+                              linear-gradient(-45deg, #f1f5f9 25%, transparent 25%), 
+                              linear-gradient(45deg, transparent 75%, #f1f5f9 75%), 
+                              linear-gradient(-45deg, transparent 75%, #f1f5f9 75%);
+            background-size: 16px 16px; background-color: #ffffff;
+        }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        .color-picker-wrapper input[type="color"] {
+            opacity: 0; width: 100%; height: 100%; cursor: pointer; position: absolute; top: 0; left: 0;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen font-sans antialiased p-4 lg:p-10">
+
+    <div class="max-w-[1600px] mx-auto space-y-8">
+        <header class="flex flex-col md:flex-row justify-between items-center bg-white p-8 rounded-[3rem] shadow-xl border border-slate-100">
+            <div class="flex items-center gap-6">
+                <div class="w-16 h-16 bg-gradient-to-tr from-emerald-500 to-teal-400 rounded-2xl flex items-center justify-center text-white text-3xl shadow-lg">✂️</div>
+                <div>
+                    <h1 class="text-3xl font-black text-slate-900 tracking-tighter uppercase italic">Sprite Slicer <span class="text-emerald-500">Pro</span></h1>
+                    <p class="text-slate-400 text-xs font-bold uppercase tracking-[0.3em] mt-1">Noise Filtering Engine v3.1</p>
+                </div>
+            </div>
+            <div class="flex gap-4 mt-6 md:mt-0">
+                <button onclick="document.getElementById('fileInput').click()" class="px-6 py-3 bg-slate-900 text-white text-xs font-black uppercase rounded-xl shadow-lg hover:bg-slate-800 transition active:scale-95 tracking-widest">
+                    📂 导入图集 (Sprite Sheet)
+                </button>
+                <button id="downloadBtn" onclick="exportSlices()" class="px-6 py-3 bg-emerald-500 text-white text-xs font-black uppercase rounded-xl shadow-lg shadow-emerald-200 hover:bg-emerald-600 transition active:scale-95 tracking-widest hidden flex items-center gap-2">
+                    💾 批量下载切片 <span id="sliceCountBadge" class="bg-white text-emerald-600 px-2 py-0.5 rounded-full font-bold">0</span>
+                </button>
+            </div>
+            <input type="file" id="fileInput" class="hidden" accept="image/png, image/jpeg, image/webp">
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            <div class="lg:col-span-4 space-y-6">
+                
+                <div class="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
+                    <h3 class="text-xs font-black text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-4 mb-6 flex justify-between">
+                        1. 纯净背景消除 <span>Chroma Key</span>
+                    </h3>
+                    
+                    <div class="space-y-6">
+                        <div class="flex items-center gap-4">
+                            <div class="color-picker-wrapper w-14 h-14 rounded-2xl border-4 border-slate-100 shadow-sm relative flex-shrink-0" style="background:#FFFFFF" id="bgKeyColorBox">
+                                <input type="color" value="#FFFFFF" id="bgKeyColor">
+                            </div>
+                            <div class="flex-1">
+                                <p class="text-[10px] font-black text-slate-400 uppercase">目标剔除色</p>
+                                <p class="text-xs font-bold text-slate-700 mt-1">点击左侧选择背景色 (如纯白/纯粉)</p>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <div class="flex justify-between text-[10px] font-black text-slate-600 uppercase mb-2">
+                                <span>色彩容差 (Tolerance)</span><span id="tolVal" class="text-emerald-500 font-mono">10</span>
+                            </div>
+                            <input type="range" id="tolerance" min="0" max="255" value="10" class="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        
+                        <button onclick="applyBackgroundRemoval()" class="w-full py-3 bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-black uppercase rounded-xl transition active:scale-95 tracking-widest border border-slate-200 shadow-sm">
+                            🧹 执行抠图去背
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
+                    <h3 class="text-xs font-black text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-4 mb-6 flex justify-between">
+                        2. 网格切解引擎 <span>Slice Engine</span>
+                    </h3>
+                    
+                    <div class="space-y-6">
+                        <div class="flex bg-slate-100 p-1 rounded-xl">
+                            <button onclick="setMode('auto')" id="mode-auto" class="flex-1 py-2 text-xs font-black uppercase rounded-lg bg-white shadow-sm text-emerald-600 transition-all">✨ 智能岛屿识别</button>
+                            <button onclick="setMode('grid')" id="mode-grid" class="flex-1 py-2 text-xs font-black uppercase rounded-lg text-slate-500 hover:text-slate-700 transition-all">📏 固定网格</button>
+                        </div>
+
+                        <div id="panel-auto" class="p-5 bg-emerald-50 border border-emerald-100 rounded-xl">
+                            <p class="text-[10px] text-emerald-800 font-medium leading-relaxed">
+                                此模式将自动框选独立存在的图元。<br>
+                                <strong class="text-emerald-600">💡 提示：如果生成了太多细碎的红框，请调高下方的【噪点过滤】尺寸，然后重新扫描。</strong>
+                            </p>
+                            <div class="mt-4 border-t border-emerald-200/50 pt-4">
+                                <div class="flex justify-between text-[10px] font-black text-emerald-700 uppercase mb-2">
+                                    <span>🛡️ 噪点过滤 (Min Size)</span><span id="minSizeVal" class="font-mono bg-emerald-100 px-2 rounded">10 px</span>
+                                </div>
+                                <input type="range" id="minSliceSize" min="1" max="100" value="10" class="w-full h-2 bg-emerald-200/50 rounded-lg appearance-none cursor-pointer">
+                                <p class="text-[9px] text-emerald-600/80 mt-2 leading-tight">宽或高低于此像素的“游离灰尘”将被算法直接抛弃。</p>
+                            </div>
+                        </div>
+
+                        <div id="panel-grid" class="hidden grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">帧宽 (W)</label>
+                                <input type="number" id="gridW" value="32" class="mt-2 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">帧高 (H)</label>
+                                <input type="number" id="gridH" value="32" class="mt-2 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm focus:outline-none">
+                            </div>
+                        </div>
+
+                        <button onclick="previewSlices()" class="w-full py-4 bg-slate-900 text-white text-xs font-black uppercase rounded-xl shadow-lg hover:bg-slate-800 transition active:scale-95 tracking-widest mt-4">
+                            🔍 扫描并生成切割线
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-8">
+                <div class="bg-white p-2 rounded-[3rem] shadow-xl border border-slate-100 h-full min-h-[700px] flex flex-col">
+                    
+                    <div class="flex flex-wrap gap-4 justify-between items-center p-6 border-b border-slate-50">
+                        <span class="text-xs font-black uppercase text-slate-400 tracking-[0.2em] bg-slate-50 px-4 py-2 rounded-lg">Visualizer</span>
+                        
+                        <div class="flex items-center gap-4">
+                            <span id="imgInfo" class="text-[10px] font-mono font-bold text-slate-400">Size: -- x --</span>
+                            <div class="h-4 w-px bg-slate-200"></div>
+                            
+                            <div class="flex items-center bg-slate-100 rounded-lg p-1" title="也可按住 Ctrl/Cmd 键滚动鼠标滚轮缩放">
+                                <button onclick="zoomOut()" class="w-6 h-6 flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-white rounded shadow-sm transition">-</button>
+                                <span id="zoomLevel" class="text-[10px] font-mono font-bold w-12 text-center text-slate-600">100%</span>
+                                <button onclick="zoomIn()" class="w-6 h-6 flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-white rounded shadow-sm transition">+</button>
+                            </div>
+                            <button onclick="resetZoom()" class="text-[10px] font-bold text-slate-400 hover:text-slate-600 transition">1:1</button>
+                            
+                            <div class="h-4 w-px bg-slate-200"></div>
+                            <button onclick="resetOriginal()" class="text-[10px] font-bold text-orange-400 hover:text-orange-600 underline decoration-orange-200">撤销抠图</button>
+                            <button onclick="clearImage()" class="text-[10px] font-bold text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition border border-red-100">🗑️ 清空图片</button>
+                        </div>
+                    </div>
+                    
+                    <div id="scrollWrapper" class="flex-1 checkerboard rounded-[2.5rem] m-2 overflow-auto p-8 relative border-4 border-slate-50 shadow-inner group">
+                        <div class="relative origin-top-left transition-transform duration-75" id="renderContainer">
+                            <canvas id="imgCanvas" class="pixelated max-w-none block shadow-2xl"></canvas>
+                            <canvas id="overlayCanvas" class="pixelated max-w-none absolute top-0 left-0"></canvas>
+                        </div>
+
+                        <div id="emptyState" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none bg-white/50 backdrop-blur-sm rounded-[2.5rem] z-10 transition-opacity">
+                            <div class="text-6xl mb-4 opacity-50">🖼️</div>
+                            <p class="font-black text-slate-500 uppercase tracking-widest text-sm">请拖入或选择带有背景的大图集</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- 全局状态 ---
+        const fileInput = document.getElementById('fileInput');
+        const imgCanvas = document.getElementById('imgCanvas');
+        const overlayCanvas = document.getElementById('overlayCanvas');
+        const renderContainer = document.getElementById('renderContainer');
+        const scrollWrapper = document.getElementById('scrollWrapper');
+        const iCtx = imgCanvas.getContext('2d', { willReadFrequently: true });
+        const oCtx = overlayCanvas.getContext('2d');
+        const emptyState = document.getElementById('emptyState');
+        const downloadBtn = document.getElementById('downloadBtn');
+        
+        let originalImageObj = null; 
+        let currentSlices = []; 
+        let fileNameBase = "extracted_sprites";
+        let sliceMode = 'auto'; 
+        
+        // 缩放控制状态
+        let currentZoom = 1.0;
+        const MIN_ZOOM = 0.1;
+        const MAX_ZOOM = 5.0;
+
+        // --- 视口缩放控制 (Viewport Zoom) ---
+        function updateZoomUI() {
+            renderContainer.style.transform = `scale(${currentZoom})`;
+            document.getElementById('zoomLevel').innerText = Math.round(currentZoom * 100) + '%';
+        }
+        function zoomIn() { if (currentZoom < MAX_ZOOM) { currentZoom += 0.2; updateZoomUI(); } }
+        function zoomOut() { if (currentZoom > MIN_ZOOM) { currentZoom -= 0.2; updateZoomUI(); } }
+        function resetZoom() { currentZoom = 1.0; updateZoomUI(); }
+
+        scrollWrapper.addEventListener('wheel', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault(); 
+                if (e.deltaY < 0) zoomIn();
+                else zoomOut();
+            }
+        }, { passive: false });
+
+        // --- 交互 UI 更新 ---
+        document.getElementById('bgKeyColor').oninput = (e) => { document.getElementById('bgKeyColorBox').style.background = e.target.value; };
+        document.getElementById('tolerance').oninput = (e) => { document.getElementById('tolVal').innerText = e.target.value; };
+        // 🛡️ 新增：防噪点过滤器的数值回显
+        document.getElementById('minSliceSize').oninput = (e) => { document.getElementById('minSizeVal').innerText = e.target.value + ' px'; };
+
+        function setMode(mode) {
+            sliceMode = mode;
+            const btnAuto = document.getElementById('mode-auto');
+            const btnGrid = document.getElementById('mode-grid');
+            const pAuto = document.getElementById('panel-auto');
+            const pGrid = document.getElementById('panel-grid');
+
+            if (mode === 'auto') {
+                btnAuto.className = "flex-1 py-2 text-xs font-black uppercase rounded-lg bg-white shadow-sm text-emerald-600 transition-all";
+                btnGrid.className = "flex-1 py-2 text-xs font-black uppercase rounded-lg text-slate-500 hover:text-slate-700 transition-all";
+                pAuto.classList.remove('hidden'); pGrid.classList.add('hidden');
+                pGrid.classList.remove('grid');
+            } else {
+                btnGrid.className = "flex-1 py-2 text-xs font-black uppercase rounded-lg bg-white shadow-sm text-emerald-600 transition-all";
+                btnAuto.className = "flex-1 py-2 text-xs font-black uppercase rounded-lg text-slate-500 hover:text-slate-700 transition-all";
+                pGrid.classList.remove('hidden'); pAuto.classList.add('hidden');
+                pGrid.classList.add('grid');
+            }
+        }
+
+        // --- 1. 文件导入与管理 ---
+        fileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            fileNameBase = file.name.split('.')[0];
+            emptyState.classList.add('hidden');
+
+            const url = URL.createObjectURL(file);
+            originalImageObj = new Image();
+            originalImageObj.onload = () => {
+                imgCanvas.width = originalImageObj.naturalWidth;
+                imgCanvas.height = originalImageObj.naturalHeight;
+                overlayCanvas.width = originalImageObj.naturalWidth;
+                overlayCanvas.height = originalImageObj.naturalHeight;
+                
+                document.getElementById('imgInfo').innerText = `Size: ${imgCanvas.width} x ${imgCanvas.height} PX`;
+                
+                iCtx.clearRect(0, 0, imgCanvas.width, imgCanvas.height);
+                iCtx.drawImage(originalImageObj, 0, 0);
+                oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                
+                downloadBtn.classList.add('hidden');
+                currentSlices = [];
+                resetZoom(); 
+            };
+            originalImageObj.src = url;
+            fileInput.value = "";
+        });
+
+        function resetOriginal() {
+            if (!originalImageObj) return;
+            iCtx.clearRect(0, 0, imgCanvas.width, imgCanvas.height);
+            iCtx.drawImage(originalImageObj, 0, 0);
+            oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            downloadBtn.classList.add('hidden');
+            currentSlices = [];
+        }
+
+        function clearImage() {
+            originalImageObj = null;
+            currentSlices = [];
+            
+            iCtx.clearRect(0, 0, imgCanvas.width, imgCanvas.height);
+            oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            imgCanvas.width = 0; imgCanvas.height = 0;
+            overlayCanvas.width = 0; overlayCanvas.height = 0;
+            
+            emptyState.classList.remove('hidden');
+            downloadBtn.classList.add('hidden');
+            document.getElementById('imgInfo').innerText = `Size: -- x --`;
+            resetZoom();
+        }
+
+        // --- 2. 抠图算法 (Chroma Key Engine) ---
+        function hexToRgb(hex) { return { r: parseInt(hex.slice(1,3),16), g: parseInt(hex.slice(3,5),16), b: parseInt(hex.slice(5,7),16) }; }
+
+        function applyBackgroundRemoval() {
+            if (!originalImageObj) return alert("请先导入图片！");
+            
+            const hex = document.getElementById('bgKeyColor').value;
+            const tol = parseInt(document.getElementById('tolerance').value);
+            const rgb = hexToRgb(hex);
+
+            const imgData = iCtx.getImageData(0, 0, imgCanvas.width, imgCanvas.height);
+            const data = imgData.data;
+
+            for(let i=0; i<data.length; i+=4) {
+                if(data[i+3] === 0) continue; 
+                const r = data[i], g = data[i+1], b = data[i+2];
+                const dist = Math.sqrt(Math.pow(r - rgb.r, 2) + Math.pow(g - rgb.g, 2) + Math.pow(b - rgb.b, 2));
+                if(dist <= tol) {
+                    data[i+3] = 0; 
+                }
+            }
+            iCtx.putImageData(imgData, 0, 0);
+            
+            oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            currentSlices = [];
+            downloadBtn.classList.add('hidden');
+        }
+
+        // --- 3. 扫描与切解引擎 ---
+        function drawSlices() {
+            oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            oCtx.strokeStyle = 'rgba(239, 68, 68, 0.8)'; 
+            oCtx.fillStyle = 'rgba(239, 68, 68, 0.1)'; 
+            oCtx.lineWidth = 1;
+            
+            currentSlices.forEach(rect => {
+                oCtx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w, rect.h);
+                oCtx.fillRect(rect.x, rect.y, rect.w, rect.h);
+            });
+
+            document.getElementById('sliceCountBadge').innerText = currentSlices.length;
+            if(currentSlices.length > 0) {
+                downloadBtn.classList.remove('hidden');
+            } else {
+                downloadBtn.classList.add('hidden');
+            }
+        }
+
+        function previewSlices() {
+            if (!originalImageObj) return alert("请先导入图片！");
+            currentSlices = [];
+
+            if (sliceMode === 'grid') calculateGridSlices();
+            else calculateAutoSlices();
+
+            drawSlices();
+        }
+
+        // 交互式点击删除
+        overlayCanvas.addEventListener('mousemove', (e) => {
+            if (currentSlices.length === 0) return;
+            const rect = overlayCanvas.getBoundingClientRect();
+            const scaleX = overlayCanvas.width / rect.width;
+            const scaleY = overlayCanvas.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+
+            let hovering = false;
+            for (let i = 0; i < currentSlices.length; i++) {
+                const s = currentSlices[i];
+                if (x >= s.x && x <= s.x + s.w && y >= s.y && y <= s.y + s.h) {
+                    hovering = true;
+                    break;
+                }
+            }
+            overlayCanvas.style.cursor = hovering ? 'pointer' : 'default';
+        });
+
+        overlayCanvas.addEventListener('mousedown', (e) => {
+            if (currentSlices.length === 0) return;
+            const rect = overlayCanvas.getBoundingClientRect();
+            const scaleX = overlayCanvas.width / rect.width;
+            const scaleY = overlayCanvas.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+
+            for (let i = currentSlices.length - 1; i >= 0; i--) {
+                const s = currentSlices[i];
+                if (x >= s.x && x <= s.x + s.w && y >= s.y && y <= s.y + s.h) {
+                    currentSlices.splice(i, 1);
+                    drawSlices();
+                    break; 
+                }
+            }
+        });
+
+        // 3.1 固定网格算法
+        function calculateGridSlices() {
+            const w = parseInt(document.getElementById('gridW').value) || 32;
+            const h = parseInt(document.getElementById('gridH').value) || 32;
+            const imgData = iCtx.getImageData(0, 0, imgCanvas.width, imgCanvas.height);
+            
+            for (let y = 0; y < imgCanvas.height; y += h) {
+                for (let x = 0; x < imgCanvas.width; x += w) {
+                    const sliceW = Math.min(w, imgCanvas.width - x);
+                    const sliceH = Math.min(h, imgCanvas.height - y);
+                    
+                    if (!isEmpty(imgData, x, y, sliceW, sliceH, imgCanvas.width)) {
+                        currentSlices.push({ x: x, y: y, w: sliceW, h: sliceH });
+                    }
+                }
+            }
+        }
+
+        function isEmpty(imgData, rx, ry, rw, rh, fullW) {
+            const data = imgData.data;
+            for (let y = ry; y < ry + rh; y++) {
+                for (let x = rx; x < rx + rw; x++) {
+                    if (data[(y * fullW + x) * 4 + 3] > 0) return false;
+                }
+            }
+            return true;
+        }
+
+        // 3.2 智能岛屿识别 (引入防噪点机制)
+        function calculateAutoSlices() {
+            const w = imgCanvas.width;
+            const h = imgCanvas.height;
+            const imgData = iCtx.getImageData(0, 0, w, h);
+            const data = imgData.data;
+            
+            const visited = new Uint8Array(w * h); 
+            // 🛡️ 获取噪点过滤器设定的最小尺寸
+            const minSize = parseInt(document.getElementById('minSliceSize').value) || 1;
+
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const idx = y * w + x;
+                    
+                    if (visited[idx]) continue;
+                    
+                    const alpha = data[idx * 4 + 3];
+                    if (alpha === 0) {
+                        visited[idx] = 1;
+                        continue;
+                    }
+                    
+                    let minX = x, maxX = x, minY = y, maxY = y;
+                    const queue = [idx];
+                    visited[idx] = 1;
+                    
+                    let qHead = 0;
+                    while(qHead < queue.length) {
+                        const currIdx = queue[qHead++];
+                        const cx = currIdx % w;
+                        const cy = Math.floor(currIdx / w);
+                        
+                        if (cx < minX) minX = cx;
+                        if (cx > maxX) maxX = cx;
+                        if (cy < minY) minY = cy;
+                        if (cy > maxY) maxY = cy;
+                        
+                        for(let dy = -1; dy <= 1; dy++) {
+                            for(let dx = -1; dx <= 1; dx++) {
+                                if(dx === 0 && dy === 0) continue;
+                                const nx = cx + dx;
+                                const ny = cy + dy;
+                                
+                                if(nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                                    const nIdx = ny * w + nx;
+                                    if(!visited[nIdx]) {
+                                        if(data[nIdx * 4 + 3] > 0) {
+                                            visited[nIdx] = 1;
+                                            queue.push(nIdx);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // 🛡️ 核心验证：只有当切片的宽高均大于等于最小容差时，才将其计入！
+                    const sliceW = maxX - minX + 1;
+                    const sliceH = maxY - minY + 1;
+                    if (sliceW >= minSize || sliceH >= minSize) { // 只要有一边达到即可，避免误伤极细长的有效元素
+                        currentSlices.push({ x: minX, y: minY, w: sliceW, h: sliceH });
+                    }
+                }
+            }
+        }
+
+        // --- 4. 批量导出 (ZIP) ---
+        async function exportSlices() {
+            if (currentSlices.length === 0) return;
+            
+            const zip = new JSZip();
+            const btn = document.getElementById('downloadBtn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = "🔄 正在打包切片...";
+
+            const offscreenCanvas = document.createElement('canvas');
+            const offCtx = offscreenCanvas.getContext('2d');
+
+            for (let i = 0; i < currentSlices.length; i++) {
+                const rect = currentSlices[i];
+                offscreenCanvas.width = rect.w;
+                offscreenCanvas.height = rect.h;
+                
+                const sliceData = iCtx.getImageData(rect.x, rect.y, rect.w, rect.h);
+                offCtx.putImageData(sliceData, 0, 0);
+
+                const blob = await new Promise(resolve => offscreenCanvas.toBlob(resolve, 'image/png'));
+                const padIndex = String(i + 1).padStart(3, '0');
+                zip.file(`${fileNameBase}_${padIndex}.png`, blob);
+            }
+
+            const zipBlob = await zip.generateAsync({type:"blob"});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(zipBlob);
+            a.download = `${fileNameBase}_slices.zip`;
+            a.click();
+
+            btn.innerHTML = originalText;
+        }
+    </script>
+</body>
+</html>

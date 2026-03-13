@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FX Forge Pro - 批量光影特效引擎</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        .pixelated { image-rendering: pixelated; image-rendering: crisp-edges; }
+        .checkerboard {
+            background-image: linear-gradient(45deg, #f1f5f9 25%, transparent 25%), 
+                              linear-gradient(-45deg, #f1f5f9 25%, transparent 25%), 
+                              linear-gradient(45deg, transparent 75%, #f1f5f9 75%), 
+                              linear-gradient(-45deg, transparent 75%, #f1f5f9 75%);
+            background-size: 16px 16px; background-color: #ffffff;
+        }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        .color-picker-wrapper input[type="color"] {
+            opacity: 0; width: 100%; height: 100%; cursor: pointer; position: absolute; top: 0; left: 0;
+        }
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 6px; background: #e2e8f0; border-radius: 10px; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 20px; width: 20px; border-radius: 10px;
+            background: #9333ea; cursor: pointer; margin-top: -7px; border: 3px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen font-sans antialiased p-4 lg:p-10">
+
+    <div class="max-w-[1700px] mx-auto space-y-8">
+        <header class="flex flex-col md:flex-row justify-between items-center bg-white p-8 rounded-[3rem] shadow-xl border border-slate-100">
+            <div class="flex items-center gap-6">
+                <div class="w-16 h-16 bg-gradient-to-tr from-purple-600 to-fuchsia-500 rounded-2xl flex items-center justify-center text-white text-3xl shadow-lg">✨</div>
+                <div>
+                    <h1 class="text-3xl font-black text-slate-900 tracking-tighter uppercase italic">FX Forge <span class="text-purple-600">Pro</span></h1>
+                    <p class="text-slate-400 text-xs font-bold uppercase tracking-[0.3em] mt-1">Batch Render & FX Pipeline</p>
+                </div>
+            </div>
+            <div class="flex gap-4 mt-6 md:mt-0">
+                <button onclick="document.getElementById('fileInput').click()" class="px-6 py-3 bg-slate-900 text-white text-xs font-black uppercase rounded-xl shadow-lg hover:bg-slate-800 transition active:scale-95 tracking-widest">
+                    📂 导入素材包
+                </button>
+                <button id="downloadBtn" onclick="batchExport()" class="px-6 py-3 bg-purple-600 text-white text-xs font-black uppercase rounded-xl shadow-lg shadow-purple-200 hover:bg-purple-700 transition active:scale-95 tracking-widest hidden flex items-center gap-2">
+                    💾 批量渲染打包 <span id="fileCountBadge" class="bg-white text-purple-600 px-2 py-0.5 rounded-full font-bold">0</span>
+                </button>
+            </div>
+            <input type="file" id="fileInput" class="hidden" multiple accept="image/png, image/webp">
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            <div class="lg:col-span-4 space-y-6 max-h-[75vh] overflow-y-auto scrollbar-hide pr-2">
+                
+                <div class="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-purple-500"></div>
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-xs font-black text-slate-700 uppercase tracking-widest">1. 边缘光效 (Auto-Outline)</h3>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="toggleOutline" class="sr-only peer" checked>
+                            <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                        </label>
+                    </div>
+                    
+                    <div class="space-y-5" id="outlinePanel">
+                        <div class="grid grid-cols-3 gap-2 bg-slate-100 p-1 rounded-xl">
+                            <button onclick="setOutlineMode('black')" id="out-black" class="py-2 text-[10px] font-black uppercase rounded-lg bg-white shadow-sm text-slate-900 transition-all">复古纯黑</button>
+                            <button onclick="setOutlineMode('white')" id="out-white" class="py-2 text-[10px] font-black uppercase rounded-lg text-slate-500 hover:text-slate-700 transition-all">高亮纯白</button>
+                            <button onclick="setOutlineMode('inner')" id="out-inner" class="py-2 text-[10px] font-black uppercase rounded-lg text-slate-500 hover:text-slate-700 transition-all">内融合</button>
+                        </div>
+                        <p id="outlineDesc" class="text-[10px] text-slate-500 leading-relaxed font-medium">生成经典的 1px 纯黑像素描边，适合增加物体的边缘对比度。</p>
+                        
+                        <div id="customColorWrap" class="hidden flex items-center gap-4">
+                            <div class="color-picker-wrapper w-10 h-10 rounded-xl border-4 border-slate-100 shadow-sm relative flex-shrink-0" style="background:#000000" id="outColorBox">
+                                <input type="color" value="#000000" id="outColor">
+                            </div>
+                            <span class="text-[10px] font-black text-slate-400 uppercase">自定义描边色</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-fuchsia-500"></div>
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-xs font-black text-slate-700 uppercase tracking-widest">2. 物理投影 (Drop Shadow)</h3>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="toggleShadow" class="sr-only peer" checked>
+                            <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-fuchsia-500"></div>
+                        </label>
+                    </div>
+                    
+                    <div class="space-y-6" id="shadowPanel">
+                        <div>
+                            <div class="flex justify-between text-[10px] font-black text-slate-600 uppercase mb-2">
+                                <span>投射角度 (Angle)</span><span id="angVal" class="text-fuchsia-600 font-mono">135°</span>
+                            </div>
+                            <input type="range" id="shdAngle" min="0" max="360" value="135" class="w-full">
+                            <p class="text-[9px] text-slate-400 mt-1">135° 为经典的右下角投射。</p>
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-[10px] font-black text-slate-600 uppercase mb-2">
+                                <span>阴影距离 (Distance)</span><span id="distVal" class="text-fuchsia-600 font-mono">4 px</span>
+                            </div>
+                            <input type="range" id="shdDist" min="1" max="50" value="4" class="w-full">
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-[10px] font-black text-slate-600 uppercase mb-2">
+                                <span>不透明度 (Opacity)</span><span id="opcVal" class="text-fuchsia-600 font-mono">40%</span>
+                            </div>
+                            <input type="range" id="shdOpc" min="0" max="100" value="40" class="w-full">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-amber-400"></div>
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-xs font-black text-slate-700 uppercase tracking-widest">3. 材质附魔 (Emission/Tint)</h3>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="toggleTint" class="sr-only peer">
+                            <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-400"></div>
+                        </label>
+                    </div>
+                    
+                    <div class="space-y-6 opacity-50 pointer-events-none transition-all" id="tintPanel">
+                        <div class="flex items-center gap-4">
+                            <div class="color-picker-wrapper w-10 h-10 rounded-xl border-4 border-slate-100 shadow-sm relative flex-shrink-0" style="background:#FDE047" id="tintColorBox">
+                                <input type="color" value="#FDE047" id="tintColor">
+                            </div>
+                            <span class="text-[10px] font-black text-slate-400 uppercase">动态变色/发光色</span>
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-[10px] font-black text-slate-600 uppercase mb-2">
+                                <span>附魔强度 (Intensity)</span><span id="tintIntVal" class="text-amber-500 font-mono">30%</span>
+                            </div>
+                            <input type="range" id="tintInt" min="0" max="100" value="30" class="w-full">
+                            <p class="text-[9px] text-slate-400 mt-2">使用 Multiply/Screen 算法融合，为物体增加属性光效（如中毒绿、火焰红）。</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="lg:col-span-8">
+                <div class="bg-white p-2 rounded-[3rem] shadow-xl border border-slate-100 h-full min-h-[700px] flex flex-col">
+                    
+                    <div class="flex flex-wrap gap-4 justify-between items-center p-6 border-b border-slate-50">
+                        <span class="text-xs font-black uppercase text-slate-400 tracking-[0.2em] bg-slate-50 px-4 py-2 rounded-lg">Render Visualizer</span>
+                        
+                        <div class="flex items-center gap-4">
+                            <div class="flex items-center bg-slate-100 rounded-lg p-1" title="也可按住 Ctrl/Cmd 键滚动鼠标滚轮缩放">
+                                <button onclick="zoomOut()" class="w-6 h-6 flex items-center justify-center text-slate-500 hover:text-purple-600 hover:bg-white rounded shadow-sm transition">-</button>
+                                <span id="zoomLevel" class="text-[10px] font-mono font-bold w-12 text-center text-slate-600">100%</span>
+                                <button onclick="zoomIn()" class="w-6 h-6 flex items-center justify-center text-slate-500 hover:text-purple-600 hover:bg-white rounded shadow-sm transition">+</button>
+                            </div>
+                            <button onclick="resetZoom()" class="text-[10px] font-bold text-slate-400 hover:text-slate-600 transition">1:1</button>
+                            <div class="h-4 w-px bg-slate-200"></div>
+                            <button onclick="clearQueue()" class="text-[10px] font-bold text-red-400 hover:text-red-600 underline decoration-red-200">清空队列</button>
+                        </div>
+                    </div>
+                    
+                    <div id="fileQueue" class="flex gap-4 overflow-x-auto p-4 border-b border-slate-50 scrollbar-hide min-h-[80px]">
+                        </div>
+
+                    <div id="scrollWrapper" class="flex-1 checkerboard rounded-[2.5rem] m-2 overflow-auto p-8 relative shadow-inner group flex items-center justify-center">
+                        <div class="relative origin-center transition-transform duration-75" id="renderContainer">
+                            <canvas id="renderCanvas" class="pixelated max-w-none block drop-shadow-2xl"></canvas>
+                        </div>
+
+                        <div id="emptyState" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none bg-white/50 backdrop-blur-sm rounded-[2.5rem] z-10 transition-opacity">
+                            <div class="text-6xl mb-4 opacity-50">⚙️</div>
+                            <p class="font-black text-slate-500 uppercase tracking-widest text-sm">请导入素材包进行批量渲染预览</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- 全局状态 ---
+        let imageFiles = [];
+        let activeIdx = -1;
+        let outlineMode = 'black'; // black, white, inner, custom
+        
+        const fileInput = document.getElementById('fileInput');
+        const renderCanvas = document.getElementById('renderCanvas');
+        const ctx = renderCanvas.getContext('2d', { willReadFrequently: true });
+        const emptyState = document.getElementById('emptyState');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const fileQueue = document.getElementById('fileQueue');
+        
+        // --- 视口缩放控制 ---
+        let currentZoom = 1.0;
+        const renderContainer = document.getElementById('renderContainer');
+        function updateZoomUI() {
+            renderContainer.style.transform = `scale(${currentZoom})`;
+            document.getElementById('zoomLevel').innerText = Math.round(currentZoom * 100) + '%';
+        }
+        function zoomIn() { if (currentZoom < 5.0) { currentZoom += 0.2; updateZoomUI(); } }
+        function zoomOut() { if (currentZoom > 0.2) { currentZoom -= 0.2; updateZoomUI(); } }
+        function resetZoom() { currentZoom = 1.0; updateZoomUI(); }
+        document.getElementById('scrollWrapper').addEventListener('wheel', (e) => {
+            if (e.ctrlKey || e.metaKey) { e.preventDefault(); if (e.deltaY < 0) zoomIn(); else zoomOut(); }
+        }, { passive: false });
+
+        // --- UI 交互绑定 ---
+        const uiElements = [
+            'toggleOutline', 'outColor', 'toggleShadow', 'shdAngle', 'shdDist', 'shdOpc', 
+            'toggleTint', 'tintColor', 'tintInt'
+        ];
+
+        uiElements.forEach(id => {
+            const el = document.getElementById(id);
+            if(el) {
+                el.addEventListener('input', () => {
+                    updateLabels();
+                    triggerRender();
+                });
+            }
+        });
+
+        function updateLabels() {
+            if(document.getElementById('outColorBox')) document.getElementById('outColorBox').style.background = document.getElementById('outColor').value;
+            if(document.getElementById('tintColorBox')) document.getElementById('tintColorBox').style.background = document.getElementById('tintColor').value;
+            document.getElementById('angVal').innerText = document.getElementById('shdAngle').value + '°';
+            document.getElementById('distVal').innerText = document.getElementById('shdDist').value + ' px';
+            document.getElementById('opcVal').innerText = document.getElementById('shdOpc').value + '%';
+            document.getElementById('tintIntVal').innerText = document.getElementById('tintInt').value + '%';
+            
+            // 面板开关视觉
+            document.getElementById('outlinePanel').style.opacity = document.getElementById('toggleOutline').checked ? 1 : 0.4;
+            document.getElementById('outlinePanel').style.pointerEvents = document.getElementById('toggleOutline').checked ? 'auto' : 'none';
+            document.getElementById('shadowPanel').style.opacity = document.getElementById('toggleShadow').checked ? 1 : 0.4;
+            document.getElementById('shadowPanel').style.pointerEvents = document.getElementById('toggleShadow').checked ? 'auto' : 'none';
+            document.getElementById('tintPanel').style.opacity = document.getElementById('toggleTint').checked ? 1 : 0.4;
+            document.getElementById('tintPanel').style.pointerEvents = document.getElementById('toggleTint').checked ? 'auto' : 'none';
+        }
+
+        function setOutlineMode(mode) {
+            outlineMode = mode;
+            ['black', 'white', 'inner', 'custom'].forEach(m => {
+                const btn = document.getElementById(`out-${m}`);
+                if(btn) {
+                    if (m === mode) {
+                        btn.className = "py-2 text-[10px] font-black uppercase rounded-lg bg-white shadow-sm text-slate-900 transition-all";
+                    } else {
+                        btn.className = "py-2 text-[10px] font-black uppercase rounded-lg text-slate-500 hover:text-slate-700 transition-all";
+                    }
+                }
+            });
+
+            const desc = document.getElementById('outlineDesc');
+            if(mode === 'black') desc.innerText = "生成经典的 1px 纯黑像素描边，适合增加物体的边缘对比度。";
+            if(mode === 'white') desc.innerText = "生成纯白描边，通常用于在游戏中表示物体被玩家【选中】或【高亮】。";
+            if(mode === 'inner') desc.innerText = "内融合：高级质感。算法会自动采样物体边缘的固有色，压暗后作为描边，极其自然。";
+
+            triggerRender();
+        }
+
+        // --- 1. 文件导入与队列 ---
+        fileInput.addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
+            if (files.length === 0) return;
+
+            emptyState.classList.add('hidden');
+            downloadBtn.classList.remove('hidden');
+
+            for (const file of files) {
+                const url = URL.createObjectURL(file);
+                const img = new Image();
+                await new Promise((resolve) => {
+                    img.onload = () => {
+                        imageFiles.push({ file, imgObj: img, name: file.name, url });
+                        resolve();
+                    };
+                    img.src = url;
+                });
+            }
+            
+            document.getElementById('fileCountBadge').innerText = imageFiles.length;
+            buildQueueUI();
+            if (activeIdx === -1) selectImage(0);
+            fileInput.value = "";
+        });
+
+        function buildQueueUI() {
+            fileQueue.innerHTML = '';
+            imageFiles.forEach((item, index) => {
+                const img = document.createElement('img');
+                img.src = item.url;
+                img.className = `h-14 w-14 object-contain rounded-xl cursor-pointer border-2 transition-all flex-shrink-0 ${index === activeIdx ? 'border-purple-500 shadow-md transform scale-105' : 'border-transparent opacity-60 hover:opacity-100 bg-white'}`;
+                img.onclick = () => selectImage(index);
+                fileQueue.appendChild(img);
+            });
+        }
+
+        function selectImage(idx) {
+            activeIdx = idx;
+            buildQueueUI();
+            triggerRender();
+        }
+
+        function clearQueue() {
+            imageFiles = []; activeIdx = -1;
+            fileQueue.innerHTML = '';
+            ctx.clearRect(0,0,renderCanvas.width, renderCanvas.height);
+            renderCanvas.width = 0; renderCanvas.height = 0;
+            emptyState.classList.remove('hidden');
+            downloadBtn.classList.add('hidden');
+        }
+
+        // --- 核心：特效熔炉引擎 (FX Engine) ---
+        function triggerRender() {
+            if (activeIdx === -1 || !imageFiles[activeIdx]) return;
+            const img = imageFiles[activeIdx].imgObj;
+            renderCanvasFX(img, renderCanvas);
+        }
+
+        function hexToRgb(hex) { return { r: parseInt(hex.slice(1,3),16), g: parseInt(hex.slice(3,5),16), b: parseInt(hex.slice(5,7),16) }; }
+
+        // 此函数负责处理单张图片，将结果输出到指定的 Canvas (用于预览或离屏批量打包)
+        function renderCanvasFX(sourceImg, targetCanvas) {
+            const useOutline = document.getElementById('toggleOutline').checked;
+            const useShadow = document.getElementById('toggleShadow').checked;
+            const useTint = document.getElementById('toggleTint').checked;
+
+            // 获取参数
+            let shadowDx = 0, shadowDy = 0, shadowOp = 0;
+            if (useShadow) {
+                const angleRad = (parseInt(document.getElementById('shdAngle').value) + 180) * Math.PI / 180; // 转化为基于屏幕坐标的正确方向
+                const dist = parseInt(document.getElementById('shdDist').value);
+                shadowDx = Math.round(Math.cos(angleRad) * dist);
+                shadowDy = Math.round(Math.sin(angleRad) * dist);
+                shadowOp = parseInt(document.getElementById('shdOpc').value) / 100;
+            }
+
+            // 1. 动态扩宽画布，防止被切断 (Auto-Padding)
+            const paddingBase = useOutline ? 1 : 0;
+            const padLeft = Math.max(paddingBase, shadowDx < 0 ? -shadowDx : 0);
+            const padRight = Math.max(paddingBase, shadowDx > 0 ? shadowDx : 0);
+            const padTop = Math.max(paddingBase, shadowDy < 0 ? -shadowDy : 0);
+            const padBottom = Math.max(paddingBase, shadowDy > 0 ? shadowDy : 0);
+
+            const newW = sourceImg.width + padLeft + padRight;
+            const newH = sourceImg.height + padTop + padBottom;
+
+            // 为了处理像素，我们需要一个临时的离屏 Canvas 读取原图数据
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = sourceImg.width; tempCanvas.height = sourceImg.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(sourceImg, 0, 0);
+            const srcData = tempCtx.getImageData(0, 0, sourceImg.width, sourceImg.height);
+            const sData = srcData.data;
+
+            // 目标 Canvas 初始化
+            targetCanvas.width = newW;
+            targetCanvas.height = newH;
+            const tCtx = targetCanvas.getContext('2d', { willReadFrequently: true });
+            tCtx.clearRect(0, 0, newW, newH);
+            
+            // 我们直接在 targetImageData 上操作像素
+            const targetImageData = tCtx.createImageData(newW, newH);
+            const dData = targetImageData.data;
+
+            const sw = sourceImg.width;
+            const sh = sourceImg.height;
+
+            // 辅助：获取原图某像素 Alpha
+            function getAlpha(x, y) {
+                if (x < 0 || x >= sw || y < 0 || y >= sh) return 0;
+                return sData[(y * sw + x) * 4 + 3];
+            }
+            // 辅助：获取原图某像素 RGB
+            function getRGB(x, y) {
+                if (x < 0 || x >= sw || y < 0 || y >= sh) return {r:0,g:0,b:0};
+                const idx = (y * sw + x) * 4;
+                return { r: sData[idx], g: sData[idx+1], b: sData[idx+2] };
+            }
+            // 辅助：向目标图写入像素
+            function setPixel(x, y, r, g, b, a) {
+                if (x < 0 || x >= newW || y < 0 || y >= newH) return;
+                const idx = (y * newW + x) * 4;
+                // Alpha blending (简化版，假设底层为空，我们是从底向上画的)
+                if (dData[idx+3] === 0 || a === 255) {
+                    dData[idx] = r; dData[idx+1] = g; dData[idx+2] = b; dData[idx+3] = a;
+                } else if (a > 0) {
+                    // 覆盖混合
+                    const alpha = a / 255;
+                    const invAlpha = 1 - alpha;
+                    dData[idx] = Math.round(r * alpha + dData[idx] * invAlpha);
+                    dData[idx+1] = Math.round(g * alpha + dData[idx+1] * invAlpha);
+                    dData[idx+2] = Math.round(b * alpha + dData[idx+2] * invAlpha);
+                    dData[idx+3] = Math.max(dData[idx+3], a);
+                }
+            }
+
+            // --- 阶段 A: 绘制阴影 (最底层) ---
+            if (useShadow) {
+                for (let y = 0; y < sh; y++) {
+                    for (let x = 0; x < sw; x++) {
+                        const a = getAlpha(x, y);
+                        if (a > 0) {
+                            const dx = x + padLeft + shadowDx;
+                            const dy = y + padTop + shadowDy;
+                            // 阴影为纯黑 + 设定透明度
+                            setPixel(dx, dy, 0, 0, 0, Math.round(a * shadowOp));
+                        }
+                    }
+                }
+            }
+
+            // --- 阶段 B: 绘制描边 (中间层) ---
+            if (useOutline) {
+                let outR=0, outG=0, outB=0;
+                if(outlineMode === 'black') { outR=0; outG=0; outB=0; }
+                else if(outlineMode === 'white') { outR=255; outG=255; outB=255; }
+                else if(outlineMode === 'custom') { 
+                    const c = hexToRgb(document.getElementById('outColor').value);
+                    outR=c.r; outG=c.g; outB=c.b;
+                }
+
+                for (let y = 0; y < sh; y++) {
+                    for (let x = 0; x < sw; x++) {
+                        const a = getAlpha(x, y);
+                        if (a === 0) {
+                            // 检查上下左右，如果是边缘，就画描边
+                            let isEdge = false;
+                            let refRGB = null;
+                            const neighbors = [[0,-1], [0,1], [-1,0], [1,0]];
+                            
+                            for(let i=0; i<neighbors.length; i++) {
+                                const nx = x + neighbors[i][0];
+                                const ny = y + neighbors[i][1];
+                                if (getAlpha(nx, ny) > 128) {
+                                    isEdge = true;
+                                    refRGB = getRGB(nx, ny);
+                                    break;
+                                }
+                            }
+
+                            if (isEdge) {
+                                let fR = outR, fG = outG, fB = outB;
+                                if (outlineMode === 'inner' && refRGB) {
+                                    // 内融合：获取相邻颜色的 RGB，压暗明度 40% (即乘以 0.6)
+                                    fR = Math.round(refRGB.r * 0.5);
+                                    fG = Math.round(refRGB.g * 0.5);
+                                    fB = Math.round(refRGB.b * 0.5);
+                                }
+                                setPixel(x + padLeft, y + padTop, fR, fG, fB, 255);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // --- 阶段 C: 绘制原图 (最上层) ---
+            for (let y = 0; y < sh; y++) {
+                for (let x = 0; x < sw; x++) {
+                    const a = getAlpha(x, y);
+                    if (a > 0) {
+                        const rgb = getRGB(x, y);
+                        setPixel(x + padLeft, y + padTop, rgb.r, rgb.g, rgb.b, a);
+                    }
+                }
+            }
+
+            tCtx.putImageData(targetImageData, 0, 0);
+
+            // --- 阶段 D: 材质发光 / 附魔 (利用 Canvas Composite 快速完成) ---
+            if (useTint) {
+                const tintInt = parseInt(document.getElementById('tintInt').value) / 100;
+                if (tintInt > 0) {
+                    // 创建一个只包含原图轮廓的临时层
+                    const tintLayer = document.createElement('canvas');
+                    tintLayer.width = newW; tintLayer.height = newH;
+                    const tlCtx = tintLayer.getContext('2d');
+                    
+                    // 将已处理的图像画上去
+                    tlCtx.drawImage(targetCanvas, 0, 0);
+                    
+                    // 改变混合模式，填充颜色
+                    tlCtx.globalCompositeOperation = 'source-in';
+                    tlCtx.fillStyle = document.getElementById('tintColor').value;
+                    tlCtx.fillRect(0, 0, newW, newH);
+
+                    // 叠加回原图 (Screen 滤色模式产生发光质感)
+                    tCtx.globalCompositeOperation = 'screen';
+                    tCtx.globalAlpha = tintInt;
+                    tCtx.drawImage(tintLayer, 0, 0);
+                    
+                    // 恢复
+                    tCtx.globalCompositeOperation = 'source-over';
+                    tCtx.globalAlpha = 1.0;
+                }
+            }
+        }
+
+        // --- 批量导出 (ZIP) ---
+        async function batchExport() {
+            if (imageFiles.length === 0) return;
+            
+            const zip = new JSZip();
+            const btn = document.getElementById('downloadBtn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = "🔄 渲染并打包中...";
+
+            const offscreenCanvas = document.createElement('canvas');
+
+            for (let i = 0; i < imageFiles.length; i++) {
+                const item = imageFiles[i];
+                
+                // 对每一张图执行相同的 FX 管线
+                renderCanvasFX(item.imgObj, offscreenCanvas);
+
+                const blob = await new Promise(resolve => offscreenCanvas.toBlob(resolve, 'image/png'));
+                
+                // 重命名输出文件：原名_fx.png
+                const baseName = item.name.split('.')[0];
+                zip.file(`${baseName}_fx.png`, blob);
+            }
+
+            const zipBlob = await zip.generateAsync({type:"blob"});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(zipBlob);
+            a.download = `FX_Batch_Output.zip`;
+            a.click();
+
+            btn.innerHTML = originalText;
+        }
+
+        // 初始化
+        updateLabels();
+    </script>
+</body>
+</html>
