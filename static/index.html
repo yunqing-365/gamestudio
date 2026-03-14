@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Asset Master v2.0 - 美术工业总控中枢</title>
+    <title>Asset Master v4.0 - Python 工业流水线中枢</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .pixelated { image-rendering: pixelated; image-rendering: crisp-edges; }
@@ -17,9 +17,8 @@
                               linear-gradient(-45deg, transparent 75%, #f1f5f9 75%);
             background-size: 12px 12px; background-color: #ffffff;
         }
-        /* Modal 动画 */
-        #addModuleModal { transition: opacity 0.2s, visibility 0.2s; }
-        #addModuleModal.hidden { opacity: 0; visibility: hidden; pointer-events: none; display: flex !important; }
+        #addModuleModal, #assetPickerModal { transition: opacity 0.2s, visibility 0.2s; }
+        #addModuleModal.hidden, #assetPickerModal.hidden { opacity: 0; visibility: hidden; pointer-events: none; display: flex !important; }
     </style>
 </head>
 <body class="bg-slate-100 text-slate-800 h-screen overflow-hidden flex font-sans antialiased">
@@ -28,7 +27,7 @@
         <div class="p-8 border-b border-slate-100">
             <div class="w-14 h-14 bg-gradient-to-tr from-slate-900 to-slate-700 rounded-2xl flex items-center justify-center text-white text-2xl shadow-lg mb-4">🎛️</div>
             <h1 class="text-2xl font-black text-slate-900 tracking-tight">Asset Hub</h1>
-            <p class="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em] mt-1">v2.0 Central Pipeline</p>
+            <p class="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em] mt-1">v4.0 Python Backend API</p>
         </div>
 
         <div class="flex-1 p-6 space-y-6 overflow-y-auto scrollbar-hide">
@@ -63,7 +62,7 @@
 
         <div id="importContainer" class="p-6 border-t border-slate-100 bg-slate-50 transition-all">
             <button onclick="document.getElementById('fileInput').click()" class="w-full py-4 bg-slate-800 text-white text-sm font-black uppercase rounded-2xl shadow-xl hover:bg-slate-700 transition active:scale-95 tracking-widest flex items-center justify-center gap-2">
-                <span>➕ 批量载入素材</span>
+                <span>➕ 上传素材至服务器</span>
             </button>
             <input type="file" id="fileInput" class="hidden" multiple accept="image/*">
         </div>
@@ -74,19 +73,25 @@
         <header class="h-20 glass-panel border-b border-slate-200/60 px-8 flex items-center justify-between z-10 sticky top-0 flex-shrink-0">
             <div>
                 <h2 id="viewTitle" class="text-lg font-black text-slate-800">🗂️ 全部资产 (All Assets)</h2>
-                <p id="viewSubtitle" class="text-xs text-slate-500 font-medium mt-0.5">管理与分发你的游戏与美术物料</p>
+                <p id="viewSubtitle" class="text-xs text-slate-500 font-medium mt-0.5">与 Python 服务器同步中...</p>
             </div>
             
-            <div class="relative" id="searchContainer">
-                <input type="text" placeholder="检索素材名称..." class="px-5 py-2.5 bg-white border border-slate-200 rounded-full text-sm w-64 focus:outline-none focus:ring-4 ring-blue-50 focus:border-blue-400 transition-all shadow-sm">
+            <div class="flex items-center gap-4">
+                <div class="relative" id="searchContainer">
+                    <input type="text" placeholder="检索素材名称..." class="px-5 py-2.5 bg-white border border-slate-200 rounded-full text-sm w-64 focus:outline-none focus:ring-4 ring-blue-50 focus:border-blue-400 transition-all shadow-sm">
+                </div>
+                
+                <button id="btnInjectAsset" onclick="openAssetPicker()" class="hidden px-6 py-2.5 bg-indigo-600 text-white rounded-full text-xs font-black tracking-widest uppercase shadow-lg shadow-indigo-200 hover:bg-indigo-500 transition-all active:scale-95 flex items-center gap-2 border-2 border-indigo-400/50">
+                    <span>📥</span> 从「待处理区」调取素材
+                </button>
             </div>
         </header>
 
         <div id="assetWorkspace" class="flex-1 overflow-y-auto p-8 scrollbar-hide">
             <div id="emptyState" class="h-full flex flex-col items-center justify-center text-center opacity-60">
                 <div class="text-6xl mb-4">📭</div>
-                <h3 class="text-lg font-black text-slate-700 mb-2">当前资产库为空</h3>
-                <p class="text-sm text-slate-500 max-w-sm">点击左下角按钮导入素材。通过左侧流水线模块加工后可返回此页管理。</p>
+                <h3 class="text-lg font-black text-slate-700 mb-2">服务器数据库为空</h3>
+                <p class="text-sm text-slate-500 max-w-sm">点击左下角按钮上传图片，它们将被物理保存到 /assets/raw 文件夹中。</p>
             </div>
             <div id="assetGrid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-6 hidden">
                 </div>
@@ -98,7 +103,6 @@
     <div id="addModuleModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 hidden flex items-center justify-center">
         <div class="bg-white w-96 rounded-[2.5rem] p-8 shadow-2xl transform scale-100 transition-transform">
             <h3 class="text-xl font-black text-slate-800 mb-6">➕ 挂载新模块</h3>
-            
             <div class="space-y-4">
                 <div>
                     <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">图标 (Emoji)</label>
@@ -109,12 +113,10 @@
                     <input type="text" id="modName" placeholder="例如: 智能切解器" class="mt-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500">
                 </div>
                 <div>
-                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">目标 HTML 文件路径/URL</label>
-                    <input type="text" id="modUrl" placeholder="例如: slicer.html 或 http://..." class="mt-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-mono text-sm">
-                    <p class="text-[9px] text-slate-400 mt-2 leading-tight">请确保该文件与当前系统在同一目录下，或者填写完整的可访问 URL。</p>
+                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">目标 HTML 文件路径</label>
+                    <input type="text" id="modUrl" placeholder="例如: 切解器.html" class="mt-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-mono text-sm">
                 </div>
             </div>
-
             <div class="flex gap-3 mt-8">
                 <button onclick="toggleModal(false)" class="flex-1 py-3 text-slate-500 hover:bg-slate-50 font-bold rounded-xl transition">取消</button>
                 <button onclick="saveNewModule()" class="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg hover:bg-blue-700 transition">保存模块</button>
@@ -122,18 +124,39 @@
         </div>
     </div>
 
+    <div id="assetPickerModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] hidden flex items-center justify-center p-8">
+        <div class="bg-white w-full max-w-4xl max-h-full rounded-[2.5rem] flex flex-col shadow-2xl overflow-hidden transform scale-100 transition-transform">
+            <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h3 class="text-lg font-black text-slate-800 flex items-center gap-3">
+                    <span class="text-2xl">🧊</span> 选择素材并注入工具
+                </h3>
+                <button onclick="toggleAssetPicker(false)" class="w-8 h-8 bg-slate-200 text-slate-600 rounded-full font-bold hover:bg-slate-300 transition">✕</button>
+            </div>
+            
+            <div class="p-6 flex-1 overflow-y-auto bg-slate-100/50">
+                <div id="pickerEmptyState" class="hidden flex flex-col items-center justify-center py-16 opacity-50">
+                    <span class="text-6xl mb-4">📭</span>
+                    <p class="font-bold text-slate-600">待处理区空空如也</p>
+                    <p class="text-xs mt-2">请先在「资产仓库」中上传素材。</p>
+                </div>
+                <div id="pickerGrid" class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
+                    </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         // =====================================
-        // 数据库：资产与工具模块
+        // 数据库与状态
         // =====================================
         let assetDb = []; 
         let currentFilter = 'ALL';
         
-        // 预装载一些工具模块 (方便你直接使用)
         let toolModules = JSON.parse(localStorage.getItem('assetHubModules')) || [
-            { id: 'tool_1', icon: '🔪', name: 'Slicer Pro 切图', url: 'slicer.html' },
-            { id: 'tool_2', icon: '✨', name: 'FX Forge 光影', url: 'fx.html' },
-            { id: 'tool_3', icon: '🌌', name: 'Particle 粒子室', url: 'particle.html' }
+            { id: 'tool_1', icon: '🔪', name: 'Slicer Pro 切图', url: '/static/切解器.html' },
+            { id: 'tool_2', icon: '✨', name: 'FX Forge 光影', url: '/static/光影引擎.html' },
+            { id: 'tool_3', icon: '🌌', name: 'Particle 粒子室', url: '/static/粒子与光影.html' },
+            { id: 'tool_4', icon: '🌊', name: '全景无缝修复', url: '/static/自动修复.html' }
         ];
 
         // DOM 元素引用
@@ -146,22 +169,21 @@
         const toolWorkspace = document.getElementById('toolWorkspace');
         const importContainer = document.getElementById('importContainer');
         const searchContainer = document.getElementById('searchContainer');
+        const btnInjectAsset = document.getElementById('btnInjectAsset');
         
         const viewTitle = document.getElementById('viewTitle');
         const viewSubtitle = document.getElementById('viewSubtitle');
 
         // =====================================
-        // 核心一：工作区路由系统 (Workspace Router)
+        // 核心一：工作区路由系统
         // =====================================
         function openWorkspace(type, payload) {
-            // UI 按钮高亮重置
             document.querySelectorAll('.nav-btn').forEach(btn => {
-                btn.classList.remove('bg-slate-900', 'text-white', 'shadow-md', 'bg-blue-50', 'text-blue-700');
+                btn.classList.remove('bg-slate-900', 'text-white', 'shadow-md', 'bg-indigo-50', 'text-indigo-700');
                 btn.classList.add('text-slate-600', 'hover:bg-slate-50');
             });
 
             if (type === 'asset') {
-                // --- 模式A: 显示资产图库 ---
                 currentFilter = payload;
                 const activeBtn = document.getElementById(`nav-${payload}`);
                 if(activeBtn) {
@@ -169,45 +191,41 @@
                     activeBtn.classList.add('bg-slate-900', 'text-white', 'shadow-md');
                 }
 
-                // 界面切换
                 assetWorkspace.classList.remove('hidden');
                 toolWorkspace.classList.add('hidden');
                 importContainer.style.display = 'block';
                 searchContainer.style.display = 'block';
+                btnInjectAsset.classList.add('hidden');
 
-                // 更新标题
                 const titles = {
                     'ALL': '🗂️ 全部资产 (All Assets)',
                     'UNPROCESSED': '🧊 待处理区 (Unprocessed Queue)',
                     'PROCESSED': '🔥 成品仓库 (Processed Repository)'
                 };
                 viewTitle.innerText = titles[payload];
-                viewSubtitle.innerText = "管理与分发你的游戏与美术物料";
+                viewSubtitle.innerText = "数据已同步至 Python 本地服务器";
 
                 renderAssetEngine();
             } 
             else if (type === 'tool') {
-                // --- 模式B: 加载外挂工具 iframe ---
                 const module = toolModules.find(m => m.id === payload);
                 if(!module) return;
 
                 const activeBtn = document.getElementById(`nav-${payload}`);
                 if(activeBtn) {
                     activeBtn.classList.remove('text-slate-600', 'hover:bg-slate-50');
-                    activeBtn.classList.add('bg-blue-50', 'text-blue-700', 'shadow-sm'); // 工具使用专属蓝色高亮
+                    activeBtn.classList.add('bg-indigo-50', 'text-indigo-700', 'shadow-sm'); 
                 }
 
-                // 界面切换
                 assetWorkspace.classList.add('hidden');
                 toolWorkspace.classList.remove('hidden');
-                importContainer.style.display = 'none'; // 工具内有自己的导入，隐藏外面的
+                importContainer.style.display = 'none'; 
                 searchContainer.style.display = 'none';
+                btnInjectAsset.classList.remove('hidden');
 
-                // 更新标题并加载 Iframe
                 viewTitle.innerText = `${module.icon} ${module.name}`;
-                viewSubtitle.innerText = `当前挂载外部引擎: ${module.url}`;
+                viewSubtitle.innerText = `沙盒引擎运行中: ${module.url}`;
                 
-                // 为了避免重复刷新，只有当 URL 变化时才重新加载
                 if (toolWorkspace.src !== module.url || toolWorkspace.src === "") {
                     toolWorkspace.src = module.url;
                 }
@@ -215,7 +233,72 @@
         }
 
         // =====================================
-        // 核心二：工具模块管理 (Module Manager)
+        // 核心二：跨帧素材注入引擎
+        // =====================================
+        function toggleAssetPicker(show) {
+            document.getElementById('assetPickerModal').classList.toggle('hidden', !show);
+        }
+
+        function openAssetPicker() {
+            const unprocessed = assetDb.filter(a => a.status === 'UNPROCESSED');
+            const pickerGrid = document.getElementById('pickerGrid');
+            const peState = document.getElementById('pickerEmptyState');
+
+            pickerGrid.innerHTML = '';
+            if (unprocessed.length === 0) {
+                peState.classList.remove('hidden');
+            } else {
+                peState.classList.add('hidden');
+                unprocessed.forEach(asset => {
+                    const card = document.createElement('div');
+                    card.className = "bg-white p-3 rounded-2xl shadow-sm border border-slate-200 cursor-pointer hover:border-indigo-500 hover:shadow-lg transition-all group relative active:scale-95";
+                    card.onclick = () => injectAssetIntoTool(asset);
+                    card.innerHTML = `
+                        <div class="checkerboard w-full aspect-square rounded-xl overflow-hidden mb-3 relative border border-slate-100">
+                            <img src="${asset.url}" class="w-full h-full object-contain pixelated p-2">
+                            <div class="absolute inset-0 bg-indigo-900/0 group-hover:bg-indigo-900/40 transition-colors flex items-center justify-center backdrop-blur-[0px] group-hover:backdrop-blur-[2px]">
+                                <span class="bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest px-4 py-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-2xl scale-90 group-hover:scale-100">注入此图</span>
+                            </div>
+                        </div>
+                        <p class="text-[10px] font-bold text-slate-700 truncate px-1 text-center" title="${asset.name}">${asset.name}</p>
+                    `;
+                    pickerGrid.appendChild(card);
+                });
+            }
+            toggleAssetPicker(true);
+        }
+
+        async function injectAssetIntoTool(asset) {
+            try {
+                // 由于我们使用了真实后端，URL 是 /assets/raw/... 可以直接 Fetch 抓取
+                const response = await fetch(asset.url);
+                const blob = await response.blob();
+                const file = new File([blob], asset.name, { type: blob.type || 'image/png' });
+                
+                const dt = new DataTransfer();
+                dt.items.add(file);
+
+                const iframeWin = document.getElementById('toolWorkspace').contentWindow;
+                const iframeDoc = iframeWin.document;
+                const targetInput = iframeDoc.getElementById('fileInput');
+                
+                if (targetInput) {
+                    targetInput.files = dt.files;
+                    const event = new Event('change', { bubbles: true });
+                    targetInput.dispatchEvent(event);
+                    toggleAssetPicker(false);
+                    viewSubtitle.innerText = `✅ 素材 ${asset.name} 注入成功！`;
+                } else {
+                    alert("⚠️ 注入失败：当前工具没有标准的 #fileInput 上传接口。");
+                }
+            } catch (err) {
+                console.error(err);
+                alert("⚠️ 跨域失败：请确保所有文件都在 FastAPI 环境下运行 (http://localhost:8000)");
+            }
+        }
+
+        // =====================================
+        // 工具模块管理
         // =====================================
         function renderToolModules() {
             toolModuleList.innerHTML = '';
@@ -231,92 +314,118 @@
                 btn.onclick = () => openWorkspace('tool', mod.id);
                 toolModuleList.appendChild(btn);
             });
-            // 保存至缓存
             localStorage.setItem('assetHubModules', JSON.stringify(toolModules));
         }
 
         function toggleModal(show) {
             const modal = document.getElementById('addModuleModal');
-            if (show) {
-                modal.classList.remove('hidden');
-                document.getElementById('modName').value = '';
-                document.getElementById('modUrl').value = '';
-            } else {
-                modal.classList.add('hidden');
-            }
+            if (show) { modal.classList.remove('hidden'); document.getElementById('modName').value = ''; document.getElementById('modUrl').value = ''; } 
+            else { modal.classList.add('hidden'); }
         }
 
         function saveNewModule() {
             const icon = document.getElementById('modIcon').value || '🔧';
             const name = document.getElementById('modName').value;
             const url = document.getElementById('modUrl').value;
-            
             if(!name || !url) return alert("请填写模块名称和路径！");
-
-            toolModules.push({
-                id: 'tool_' + Date.now(),
-                icon: icon,
-                name: name,
-                url: url
-            });
-            
-            renderToolModules();
-            toggleModal(false);
+            toolModules.push({ id: 'tool_' + Date.now(), icon: icon, name: name, url: url });
+            renderToolModules(); toggleModal(false);
         }
 
         function deleteModule(event, id) {
-            event.stopPropagation(); // 阻止触发打开工具
+            event.stopPropagation();
             if(confirm("确定要移除该模块吗？")) {
                 toolModules = toolModules.filter(m => m.id !== id);
-                renderToolModules();
-                openWorkspace('asset', 'ALL'); // 删完跳回主页
+                renderToolModules(); openWorkspace('asset', 'ALL');
             }
         }
 
+
         // =====================================
-        // 核心三：原有的资产管理引擎 (Asset Engine)
+        // 🚀 核心三：接入 Python 后端的真实流水线
         // =====================================
-        fileInput.onchange = (e) => {
+        
+        // 1. 初始化拉取数据库数据
+        async function loadAssetsFromServer() {
+            try {
+                const response = await fetch('/api/assets');
+                if (response.ok) {
+                    assetDb = await response.json();
+                    renderAssetEngine();
+                }
+            } catch (e) {
+                console.error("⚠️ 无法连接到 Python 后端", e);
+                viewSubtitle.innerText = "⚠️ 无法连接到后台服务器，请确保已运行 uvicorn";
+            }
+        }
+
+        // 2. 真实物理上传 (存储到硬盘)
+        fileInput.onchange = async (e) => {
             const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
             if (files.length === 0) return;
-            files.forEach(file => {
-                assetDb.push({
-                    id: 'AST_' + Math.random().toString(36).substr(2, 9).toUpperCase(),
-                    name: file.name,
-                    url: URL.createObjectURL(file),
-                    status: 'UNPROCESSED', 
-                    date: new Date().toLocaleDateString()
-                });
-            });
+            
+            viewSubtitle.innerText = "⏳ 正在上传并写入本地服务器硬盘...";
+
+            for (let file of files) {
+                const formData = new FormData();
+                formData.append("file", file);
+
+                try {
+                    const response = await fetch('/api/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    if (response.ok) {
+                        const newAsset = await response.json();
+                        assetDb.push(newAsset);
+                    }
+                } catch (err) {
+                    console.error("上传失败", err);
+                }
+            }
             fileInput.value = ""; 
+            viewSubtitle.innerText = "✅ 上传成功并已持久化";
             renderAssetEngine();
         };
 
-        function toggleStatus(id) {
+        // 3. 呼叫 OpenCV 后端处理
+        async function toggleStatus(id) {
             const asset = assetDb.find(a => a.id === id);
-            if(asset) {
-                asset.status = asset.status === 'UNPROCESSED' ? 'PROCESSED' : 'UNPROCESSED';
-                renderAssetEngine();
+            if (!asset) return;
+
+            if (asset.status === 'UNPROCESSED') {
+                viewSubtitle.innerText = "🤖 OpenCV 视觉引擎处理中...";
+                try {
+                    const response = await fetch(`/api/process/${id}`, { method: 'POST' });
+                    if (response.ok) {
+                        const result = await response.json();
+                        asset.status = result.asset.status;
+                        asset.url = result.asset.url; // 替换为处理后的新图 URL
+                        viewSubtitle.innerText = "✨ OpenCV 后台处理完成！已写入硬盘。";
+                    }
+                } catch (err) {
+                    console.error("处理失败", err);
+                    viewSubtitle.innerText = "❌ OpenCV 处理异常";
+                }
+            } else {
+                // 仅状态切换
+                asset.status = 'UNPROCESSED';
             }
+            renderAssetEngine();
         }
 
+        // 4. 渲染图库 UI
         function renderAssetEngine() {
             const filteredAssets = currentFilter === 'ALL' ? assetDb : assetDb.filter(a => a.status === currentFilter);
-
             document.getElementById('count-ALL').innerText = assetDb.length;
             document.getElementById('count-UNPROCESSED').innerText = assetDb.filter(a => a.status === 'UNPROCESSED').length;
             document.getElementById('count-PROCESSED').innerText = assetDb.filter(a => a.status === 'PROCESSED').length;
 
             if (filteredAssets.length === 0) {
-                emptyState.classList.remove('hidden');
-                assetGrid.classList.add('hidden');
-                assetGrid.innerHTML = '';
-                return;
+                emptyState.classList.remove('hidden'); assetGrid.classList.add('hidden'); assetGrid.innerHTML = ''; return;
             }
 
-            emptyState.classList.add('hidden');
-            assetGrid.classList.remove('hidden');
-            assetGrid.innerHTML = '';
+            emptyState.classList.add('hidden'); assetGrid.classList.remove('hidden'); assetGrid.innerHTML = '';
 
             filteredAssets.forEach(asset => {
                 const isProcessed = asset.status === 'PROCESSED';
@@ -327,18 +436,17 @@
                         <img src="${asset.url}" class="w-full h-full object-contain pixelated p-2">
                         <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
                             <button onclick="toggleStatus('${asset.id}')" class="px-5 py-2.5 ${isProcessed ? 'bg-slate-700 hover:bg-slate-600' : 'bg-blue-600 hover:bg-blue-500'} text-white text-[11px] font-black uppercase rounded-full shadow-lg transition-transform active:scale-95">
-                                ${isProcessed ? '撤回至待处理' : '标记为已处理'}
+                                ${isProcessed ? '撤回状态' : '使用 OpenCV 自动处理'}
                             </button>
                         </div>
                         <div class="absolute top-3 left-3 px-2.5 py-1 rounded-md text-[9px] font-black uppercase shadow-sm ${isProcessed ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-slate-800 text-white'}">
-                            ${isProcessed ? '✓ PROCESSED' : 'PENDING'}
+                            ${isProcessed ? '✓ OpenCV PROCESSED' : 'RAW ASSET'}
                         </div>
                     </div>
                     <div class="px-2 pt-4 pb-2">
                         <h4 class="text-xs font-bold text-slate-800 truncate" title="${asset.name}">${asset.name}</h4>
                         <div class="flex justify-between items-center mt-1">
                             <p class="text-[10px] text-slate-400 font-mono">${asset.id}</p>
-                            <p class="text-[10px] text-slate-300">${asset.date}</p>
                         </div>
                     </div>
                 `;
@@ -346,9 +454,13 @@
             });
         }
 
-        // 初始化运行
+        // --- 系统初始化 ---
         renderToolModules();
-        openWorkspace('asset', 'ALL'); // 默认打开所有资产
+        openWorkspace('asset', 'ALL'); 
+        
+        // 🌟 启动时立刻请求服务器同步数据
+        loadAssetsFromServer();
+        
     </script>
 </body>
 </html>

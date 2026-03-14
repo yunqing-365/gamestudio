@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iso-Scene Architect v5.0 - 空间变换版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .pixelated { image-rendering: pixelated; image-rendering: crisp-edges; }
+        .checkerboard {
+            background-image: linear-gradient(45deg, #1e293b 25%, transparent 25%), 
+                              linear-gradient(-45deg, #1e293b 25%, transparent 25%), 
+                              linear-gradient(45deg, transparent 75%, #1e293b 75%), 
+                              linear-gradient(-45deg, transparent 75%, #1e293b 75%);
+            background-size: 20px 20px; background-color: #0f172a;
+        }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .asset-btn { transition: transform 0.1s; }
+        .asset-btn.active { border-color: #3b82f6; transform: scale(1.05); box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.4); background: #1e3a8a; }
+        .tool-btn.active { background-color: #f59e0b; color: white; border-color: #f59e0b; }
+        
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; background: #475569; border-radius: 10px; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%;
+            background: #3b82f6; cursor: pointer; margin-top: -6px; border: 2px solid white;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-200 h-screen overflow-hidden flex font-sans antialiased">
+
+    <aside class="w-80 bg-slate-800 border-r border-slate-700 flex flex-col shadow-2xl z-20 flex-shrink-0 relative">
+        <div class="p-6 border-b border-slate-700 flex justify-between items-center">
+            <div>
+                <div class="flex items-center gap-3 mb-1">
+                    <div class="w-8 h-8 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center text-white text-lg shadow-lg">🗺️</div>
+                    <h1 class="text-lg font-black text-white tracking-tighter uppercase italic">Iso-Architect</h1>
+                </div>
+                <p class="text-slate-400 text-[8px] font-bold uppercase tracking-[0.2em]">v5.0 Transform & Layer Engine</p>
+            </div>
+        </div>
+
+        <div class="p-5 space-y-5 flex-1 overflow-y-auto scrollbar-hide">
+            
+            <div>
+                <div class="flex gap-2">
+                    <button onclick="setTool('brush')" id="tool-brush" class="tool-btn active flex-1 py-2 rounded-xl bg-slate-700 border border-slate-600 text-[11px] font-bold transition-colors shadow-sm">🖌️ 放置物品</button>
+                    <button onclick="setTool('eraser')" id="tool-eraser" class="tool-btn flex-1 py-2 rounded-xl bg-slate-700 border border-slate-600 text-[11px] font-bold transition-colors shadow-sm" title="鼠标指向物体即可精准删除">🧹 射线铲除</button>
+                </div>
+            </div>
+
+            <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 shadow-inner space-y-4">
+                <p class="text-[9px] font-black text-blue-400 uppercase tracking-widest border-b border-slate-700 pb-2">当前笔刷属性 (Physics)</p>
+                <div>
+                    <div class="flex justify-between text-[9px] font-bold text-slate-400 mb-1"><span>素材缩放</span><span id="scaleVal" class="text-white">100%</span></div>
+                    <input type="range" id="brushScale" min="0.1" max="3" step="0.05" value="1" class="w-full">
+                </div>
+                <div>
+                    <div class="flex justify-between text-[9px] font-bold text-slate-400 mb-1"><span>Y轴锚点校准 (对齐网格)</span><span id="anchorVal" class="text-white">0px</span></div>
+                    <input type="range" id="brushAnchor" min="-300" max="300" step="1" value="0" class="w-full">
+                </div>
+                
+                <div class="pt-2 border-t border-slate-700">
+                    <div class="flex justify-between text-[9px] font-bold text-amber-400 mb-1">
+                        <span>旋转 (Rotation)</span>
+                        <span id="rotVal" class="text-white">0°</span>
+                    </div>
+                    <input type="range" id="brushRotation" min="0" max="360" step="1" value="0" class="w-full accent-amber-500">
+                </div>
+                <div class="flex justify-between items-center pt-1">
+                    <span class="text-[9px] font-bold text-amber-400">水平翻转 (Mirror X)</span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="brushFlipX" class="sr-only peer">
+                        <div class="w-7 h-4 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-amber-500"></div>
+                    </label>
+                </div>
+
+                <div class="pt-2 border-t border-slate-700">
+                    <div class="flex justify-between text-[10px] font-bold text-emerald-400 mb-2 items-center">
+                        <span>Z轴高度 (层叠高度)</span>
+                        <div class="flex items-center gap-2">
+                            <button onclick="changeElevation(-1)" class="w-5 h-5 bg-slate-700 rounded hover:bg-slate-600">-</button>
+                            <span id="elevVal" class="font-mono text-sm w-4 text-center text-white">0</span>
+                            <button onclick="changeElevation(1)" class="w-5 h-5 bg-slate-700 rounded hover:bg-slate-600">+</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <div class="flex justify-between items-center mb-2">
+                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">渲染图层 (Layers)</p>
+                    <div class="flex gap-2">
+                        <button onclick="addLayer()" class="text-[9px] bg-blue-600 hover:bg-blue-500 text-white px-2 py-0.5 rounded shadow">➕ 新建</button>
+                        <button onclick="clearInstances()" class="text-[9px] text-red-400 hover:text-red-300 underline">全清</button>
+                    </div>
+                </div>
+                <div id="layerList" class="space-y-1 bg-slate-900 p-2 rounded-xl border border-slate-700">
+                    </div>
+            </div>
+
+            <div class="bg-indigo-900/20 p-4 rounded-xl border border-indigo-500/30 space-y-3">
+                <div class="flex justify-between items-center">
+                    <p class="text-[10px] font-black text-indigo-400 uppercase tracking-widest">参考底图 (Blueprint)</p>
+                    <button onclick="document.getElementById('bgUploader').click()" class="text-[9px] bg-indigo-600 text-white px-2 py-1 rounded shadow">导入底图</button>
+                    <input type="file" id="bgUploader" class="hidden" accept="image/*">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <span class="text-[9px] text-slate-400">缩放 <span id="bgScaleVal" class="text-white">100%</span></span>
+                        <input type="range" id="bgScale" min="0.1" max="5" step="0.1" value="1" class="w-full">
+                    </div>
+                    <div>
+                        <span class="text-[9px] text-slate-400">透明度 <span id="bgOpcVal" class="text-white">100%</span></span>
+                        <input type="range" id="bgOpacity" min="0" max="100" value="100" class="w-full">
+                    </div>
+                    <div>
+                        <span class="text-[9px] text-slate-400">X 偏移</span>
+                        <input type="range" id="bgOffsetX" min="-2000" max="2000" value="0" class="w-full">
+                    </div>
+                    <div>
+                        <span class="text-[9px] text-slate-400">Y 偏移</span>
+                        <input type="range" id="bgOffsetY" min="-2000" max="2000" value="0" class="w-full">
+                    </div>
+                </div>
+            </div>
+
+        </div>
+        
+        <div class="p-4 border-t border-slate-700">
+            <button onclick="exportScene()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-black uppercase rounded-xl shadow-lg transition-all tracking-widest">
+                📸 导出完整场景
+            </button>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col relative">
+        <div id="viewport" class="flex-1 checkerboard relative overflow-hidden cursor-crosshair">
+            <canvas id="sceneCanvas" class="pixelated absolute top-0 left-0 w-full h-full"></canvas>
+        </div>
+
+        <div class="h-44 bg-slate-800 border-t border-slate-700 flex flex-col shadow-[0_-10px_30px_rgba(0,0,0,0.3)] z-10">
+            <div class="flex justify-between items-center px-6 py-2 border-b border-slate-700/50 bg-slate-900/50">
+                <span class="text-[10px] font-black uppercase text-slate-400 tracking-widest">🎨 资产调色板 (Asset Palette)</span>
+                
+                <div class="flex items-center gap-3">
+                    <button onclick="defringeAsset()" title="去除素材周围的半透明杂色边缘（防白边黑边）" class="px-3 py-1.5 bg-rose-600/30 border border-rose-500/50 hover:bg-rose-600/50 text-rose-300 text-[10px] font-bold rounded-lg transition flex items-center gap-1">
+                        ✨ 消除锯齿杂边 (Defringe)
+                    </button>
+                    <div class="w-px h-4 bg-slate-600"></div>
+                    <button onclick="document.getElementById('assetUploader').click()" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold rounded-lg shadow transition">
+                        ➕ 批量导入新素材
+                    </button>
+                    <input type="file" id="assetUploader" class="hidden" multiple accept="image/*">
+                </div>
+            </div>
+            <div id="assetPalette" class="flex-1 p-3 flex gap-3 overflow-x-auto scrollbar-hide items-center"></div>
+        </div>
+    </main>
+
+    <script>
+        // ==========================================
+        // 核心数据结构与状态
+        // ==========================================
+        const canvas = document.getElementById('sceneCanvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+        const viewport = document.getElementById('viewport');
+
+        // Scene Instances (新增 flipX 和 rotation 属性)
+        let sceneInstances = []; 
+        
+        let layers = [
+            { id: 'layer_1', name: '🟫 地面层 (Floor)', visible: true },
+            { id: 'layer_2', name: '🌳 物体层 (Object)', visible: true },
+            { id: 'layer_3', name: '☁️ 天空层 (Sky)', visible: true }
+        ];
+
+        let assets = {};
+        let activeAssetId = null;
+        let activeLayerId = layers[0].id;
+        let activeTool = 'brush'; 
+
+        let bg = { img: null, opacity: 1.0, scale: 1.0, ox: 0, oy: 0 };
+
+        let camera = { x: 0, y: 0, zoom: 1 };
+        let gridW = 64; let gridH = 32;
+        let currentZ = 0; 
+
+        // 🌟 笔刷属性
+        let brushScale = 1.0;
+        let brushAnchor = 0;
+        let brushRotation = 0;
+        let brushFlipX = false;
+
+        let isDragging = false, isPainting = false;
+        let lastMouseX = 0, lastMouseY = 0;
+        let mouseScreenX = 0, mouseScreenY = 0;
+        let hoverCell = { x: 0, y: 0 };
+        let hoveredInstance = null; 
+
+        // ==========================================
+        // UI & 动态图层系统
+        // ==========================================
+        function buildLayerUI() {
+            const list = document.getElementById('layerList');
+            list.innerHTML = '';
+            [...layers].reverse().forEach((layer, revIdx) => {
+                const idx = layers.length - 1 - revIdx;
+                const div = document.createElement('div');
+                div.className = `flex items-center justify-between p-1.5 rounded-lg cursor-pointer border transition-all ${activeLayerId === layer.id ? 'bg-blue-600/30 border-blue-500' : 'bg-slate-800 border-transparent hover:bg-slate-700'}`;
+                
+                div.innerHTML = `
+                    <div class="flex-1 text-[10px] font-bold text-slate-200 pl-2" onclick="setActiveLayer('${layer.id}')">${layer.name}</div>
+                    <div class="flex items-center gap-1">
+                        <button onclick="moveLayer(${idx}, 1)" class="px-1 text-slate-400 hover:text-white" title="上移">▲</button>
+                        <button onclick="moveLayer(${idx}, -1)" class="px-1 text-slate-400 hover:text-white" title="下移">▼</button>
+                        <button onclick="toggleLayerVis('${layer.id}')" class="px-1.5 opacity-80 hover:opacity-100">${layer.visible ? '👁️' : '🙈'}</button>
+                    </div>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        function setActiveLayer(layerId) { activeLayerId = layerId; buildLayerUI(); }
+        function toggleLayerVis(layerId) { const l = layers.find(x => x.id === layerId); if(l) l.visible = !l.visible; buildLayerUI(); requestRender(); }
+        function addLayer() {
+            const name = prompt("请输入图层名称：", "新建图层");
+            if(name) {
+                const newId = 'layer_' + Date.now();
+                layers.push({ id: newId, name: name, visible: true });
+                activeLayerId = newId; buildLayerUI(); requestRender();
+            }
+        }
+        function moveLayer(idx, direction) {
+            const targetIdx = idx + direction;
+            if (targetIdx >= 0 && targetIdx < layers.length) {
+                const temp = layers[idx]; layers[idx] = layers[targetIdx]; layers[targetIdx] = temp;
+                buildLayerUI(); requestRender();
+            }
+        }
+
+        // ==========================================
+        // 绑定杂项 UI 事件
+        // ==========================================
+        document.getElementById('brushScale').oninput = (e) => { brushScale = parseFloat(e.target.value); document.getElementById('scaleVal').innerText = Math.round(brushScale * 100) + '%'; requestRender(); };
+        document.getElementById('brushAnchor').oninput = (e) => { brushAnchor = parseInt(e.target.value); document.getElementById('anchorVal').innerText = brushAnchor + 'px'; requestRender(); };
+        
+        // 🌟 旋转与翻转绑定
+        document.getElementById('brushRotation').oninput = (e) => { brushRotation = parseInt(e.target.value); document.getElementById('rotVal').innerText = brushRotation + '°'; requestRender(); };
+        document.getElementById('brushFlipX').onchange = (e) => { brushFlipX = e.target.checked; requestRender(); };
+
+        document.getElementById('bgOpacity').oninput = (e) => { bg.opacity = parseInt(e.target.value)/100; document.getElementById('bgOpcVal').innerText = e.target.value + '%'; requestRender(); };
+        document.getElementById('bgScale').oninput = (e) => { bg.scale = parseFloat(e.target.value); document.getElementById('bgScaleVal').innerText = Math.round(bg.scale * 100) + '%'; requestRender(); };
+        document.getElementById('bgOffsetX').oninput = (e) => { bg.ox = parseInt(e.target.value); requestRender(); };
+        document.getElementById('bgOffsetY').oninput = (e) => { bg.oy = parseInt(e.target.value); requestRender(); };
+
+        function changeElevation(val) { currentZ = Math.max(0, currentZ + val); document.getElementById('elevVal').innerText = currentZ; requestRender(); }
+
+        function resizeCanvas() {
+            canvas.width = viewport.clientWidth; canvas.height = viewport.clientHeight;
+            if (camera.x === 0 && camera.y === 0) { camera.x = canvas.width / 2; camera.y = canvas.height / 4; }
+            requestRender();
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        document.getElementById('bgUploader').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const img = new Image();
+            img.onload = () => { bg.img = img; requestRender(); };
+            img.src = URL.createObjectURL(file);
+            e.target.value = '';
+        });
+
+        // ==========================================
+        // 素材管理与魔法工具
+        // ==========================================
+        function addAssetToLibrary(id, dataUrl) {
+            const img = new Image();
+            img.onload = () => {
+                assets[id] = { img: img, w: img.width, h: img.height };
+                renderAssetPalette();
+                if(!activeAssetId) selectAsset(id);
+                requestRender();
+            };
+            img.src = dataUrl;
+        }
+
+        document.getElementById('assetUploader').addEventListener('change', (e) => {
+            Array.from(e.target.files).forEach(file => {
+                if (!file.type.startsWith('image/')) return;
+                const id = 'AST_' + Math.random().toString(36).substr(2, 6);
+                addAssetToLibrary(id, URL.createObjectURL(file));
+            });
+            e.target.value = '';
+        });
+
+        function renderAssetPalette() {
+            const palette = document.getElementById('assetPalette');
+            palette.innerHTML = '';
+            Object.keys(assets).forEach(id => {
+                const asset = assets[id];
+                const btn = document.createElement('button');
+                btn.className = `asset-btn h-full aspect-square bg-slate-900 rounded-xl border-4 flex items-center justify-center p-2 flex-shrink-0 ${id === activeAssetId ? 'active' : 'border-slate-700 opacity-60 hover:opacity-100'}`;
+                btn.onclick = () => selectAsset(id);
+                
+                const imgEl = document.createElement('img');
+                imgEl.src = asset.img.src;
+                imgEl.className = "max-w-full max-h-full object-contain pixelated drop-shadow-lg";
+                
+                btn.appendChild(imgEl);
+                palette.appendChild(btn);
+            });
+        }
+
+        function selectAsset(id) { activeAssetId = id; setTool('brush'); renderAssetPalette(); }
+        function setTool(tool) { activeTool = tool; document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active')); document.getElementById(`tool-${tool}`).classList.add('active'); requestRender(); }
+        function clearInstances() { if(confirm(`确定要清空全部场景吗？`)) { sceneInstances = []; requestRender(); } }
+
+        function defringeAsset() {
+            if (!activeAssetId || !assets[activeAssetId]) return alert("请先在调色板中选中一个素材！");
+            const asset = assets[activeAssetId];
+            const tmpCvs = document.createElement('canvas'); tmpCvs.width = asset.w; tmpCvs.height = asset.h;
+            const tCtx = tmpCvs.getContext('2d'); tCtx.drawImage(asset.img, 0, 0);
+            const imgData = tCtx.getImageData(0, 0, asset.w, asset.h); const data = imgData.data;
+            for(let i=3; i<data.length; i+=4) { if (data[i] < 200) { data[i] = 0; } else { data[i] = 255; } }
+            tCtx.putImageData(imgData, 0, 0);
+            asset.img.src = tmpCvs.toDataURL();
+            setTimeout(() => { renderAssetPalette(); requestRender(); }, 100);
+        }
+
+        // ==========================================
+        // 数学引擎
+        // ==========================================
+        function getMousePos(e) {
+            const rect = viewport.getBoundingClientRect();
+            return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        }
+
+        function screenToIso(sx, sy, gz) {
+            const localX = (sx - camera.x) / camera.zoom;
+            const localY = (sy - camera.y) / camera.zoom + (gz * gridH);
+            const halfW = gridW / 2, halfH = gridH / 2;
+            const gridX = (localX / halfW + localY / halfH) / 2;
+            const gridY = (localY / halfH - localX / halfW) / 2;
+            return { x: Math.floor(gridX), y: Math.floor(gridY) };
+        }
+
+        function isoToScreen(gx, gy, gz) {
+            const halfW = gridW / 2, halfH = gridH / 2;
+            return { x: (gx - gy) * halfW, y: (gx + gy) * halfH - (gz * gridH) };
+        }
+
+        // ==========================================
+        // 渲染引擎与 Z-Sorting (包含变换支持)
+        // ==========================================
+        function getSortedRenderList() {
+            let list = [...sceneInstances];
+            list.sort((a, b) => {
+                const depthA = a.gx + a.gy; const depthB = b.gx + b.gy;
+                if (depthA !== depthB) return depthA - depthB;
+                if (a.gz !== b.gz) return a.gz - b.gz;
+                if (a.gx !== b.gx) return a.gx - b.gx;
+                const layerIdxA = layers.findIndex(l => l.id === a.layer);
+                const layerIdxB = layers.findIndex(l => l.id === b.layer);
+                return layerIdxA - layerIdxB;
+            });
+            return list;
+        }
+
+        let renderReq = null;
+        function requestRender() { if (!renderReq) renderReq = requestAnimationFrame(drawScene); }
+
+        function drawScene() {
+            renderReq = null;
+            ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+            ctx.translate(camera.x, camera.y);
+            ctx.scale(camera.zoom, camera.zoom);
+
+            if (bg.img) {
+                ctx.globalAlpha = bg.opacity;
+                const bw = bg.img.width * bg.scale; const bh = bg.img.height * bg.scale;
+                ctx.drawImage(bg.img, -bw/2 + bg.ox, -bh/2 + bg.oy, bw, bh);
+                ctx.globalAlpha = 1.0;
+            }
+
+            drawGrid();
+
+            // 渲染实例
+            const renderList = getSortedRenderList();
+            renderList.forEach(inst => {
+                const lDef = layers.find(l => l.id === inst.layer);
+                if (!lDef || !lDef.visible) return; 
+                const asset = assets[inst.assetId];
+                if (!asset) return;
+
+                const pos = isoToScreen(inst.gx, inst.gy, inst.gz);
+                const drawW = asset.w * inst.scale;
+                const drawH = asset.h * inst.scale;
+                
+                // 🌟 变换矩阵核心逻辑：先移动到物体中心，再旋转缩放，再拉回去
+                const cx = pos.x; 
+                const cy = pos.y + gridH / 2 - drawH / 2 + inst.anchorY;
+
+                ctx.save();
+                ctx.translate(cx, cy);
+                if (inst.rotation) ctx.rotate(inst.rotation * Math.PI / 180);
+                if (inst.flipX) ctx.scale(-1, 1);
+
+                if (activeTool === 'eraser' && hoveredInstance && hoveredInstance.id === inst.id) {
+                    ctx.shadowColor = 'red'; ctx.shadowBlur = 20;
+                    ctx.globalAlpha = 0.5;
+                }
+                
+                // 因为已经移到了中心，所以从 -w/2, -h/2 开始画
+                ctx.drawImage(asset.img, -drawW / 2, -drawH / 2, drawW, drawH);
+                ctx.restore();
+            });
+
+            // 笔刷游标
+            if (hoverCell && activeTool === 'brush') {
+                const pos = isoToScreen(hoverCell.x, hoverCell.y, currentZ);
+                
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y - gridH/2); ctx.lineTo(pos.x + gridW/2, pos.y);
+                ctx.lineTo(pos.x, pos.y + gridH/2); ctx.lineTo(pos.x - gridW/2, pos.y);
+                ctx.closePath();
+                ctx.fillStyle = 'rgba(16, 185, 129, 0.3)'; ctx.fill();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'; ctx.lineWidth = 2 / camera.zoom; ctx.stroke();
+                
+                if (activeAssetId && assets[activeAssetId]) {
+                    const asset = assets[activeAssetId];
+                    const drawW = asset.w * brushScale; const drawH = asset.h * brushScale;
+                    
+                    const cx = pos.x; 
+                    const cy = pos.y + gridH / 2 - drawH / 2 + brushAnchor;
+
+                    ctx.save();
+                    ctx.translate(cx, cy);
+                    if (brushRotation) ctx.rotate(brushRotation * Math.PI / 180);
+                    if (brushFlipX) ctx.scale(-1, 1);
+
+                    ctx.globalAlpha = 0.6;
+                    ctx.drawImage(asset.img, -drawW / 2, -drawH / 2, drawW, drawH);
+                    ctx.restore();
+                }
+            }
+
+            ctx.restore();
+        }
+
+        function drawGrid() {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+            ctx.lineWidth = 1 / camera.zoom;
+            const size = 30;
+            for (let i = -size; i <= size; i++) {
+                const p1 = isoToScreen(i, -size, 0); const p2 = isoToScreen(i, size, 0);
+                ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+                const p3 = isoToScreen(-size, i, 0); const p4 = isoToScreen(size, i, 0);
+                ctx.beginPath(); ctx.moveTo(p3.x, p3.y); ctx.lineTo(p4.x, p4.y); ctx.stroke();
+            }
+        }
+
+        // ==========================================
+        // 交互与逆向矩阵射线检测
+        // ==========================================
+        function doRaycastErase() {
+            if (hoveredInstance) {
+                sceneInstances = sceneInstances.filter(inst => inst.id !== hoveredInstance.id);
+                hoveredInstance = null; 
+            }
+        }
+
+        viewport.addEventListener('mousedown', (e) => {
+            const mPos = getMousePos(e);
+            if (e.button === 1 || e.code === 'Space') { 
+                isDragging = true; lastMouseX = e.clientX; lastMouseY = e.clientY; viewport.style.cursor = 'grabbing';
+            } else if (e.button === 0) { 
+                if (activeTool === 'brush') {
+                    isPainting = true;
+                    const cell = screenToIso(mPos.x, mPos.y, currentZ);
+                    const exists = sceneInstances.some(inst => inst.gx === cell.x && inst.gy === cell.y && inst.gz === currentZ && inst.layer === activeLayerId);
+                    if (!exists && activeAssetId) {
+                        sceneInstances.push({
+                            id: Date.now() + Math.random(), assetId: activeAssetId, layer: activeLayerId,
+                            gx: cell.x, gy: cell.y, gz: currentZ, scale: brushScale, anchorY: brushAnchor,
+                            rotation: brushRotation, flipX: brushFlipX // 🌟 存储变换信息
+                        });
+                    }
+                } else if (activeTool === 'eraser') {
+                    doRaycastErase();
+                }
+                requestRender();
+            }
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            const mPos = getMousePos(e);
+            const worldX = (mPos.x - camera.x) / camera.zoom;
+            const worldY = (mPos.y - camera.y) / camera.zoom;
+
+            if (isDragging) {
+                camera.x += (e.clientX - lastMouseX); camera.y += (e.clientY - lastMouseY);
+                lastMouseX = e.clientX; lastMouseY = e.clientY; requestRender();
+                return;
+            }
+
+            if (activeTool === 'brush') {
+                const cell = screenToIso(mPos.x, mPos.y, currentZ);
+                if (hoverCell.x !== cell.x || hoverCell.y !== cell.y) { hoverCell = cell; requestRender(); }
+                if (isPainting && activeAssetId) {
+                    const exists = sceneInstances.some(inst => inst.gx === cell.x && inst.gy === cell.y && inst.gz === currentZ && inst.layer === activeLayerId);
+                    if (!exists) {
+                        sceneInstances.push({
+                            id: Date.now() + Math.random(), assetId: activeAssetId, layer: activeLayerId,
+                            gx: cell.x, gy: cell.y, gz: currentZ, scale: brushScale, anchorY: brushAnchor,
+                            rotation: brushRotation, flipX: brushFlipX
+                        });
+                    }
+                }
+            } 
+            else if (activeTool === 'eraser') {
+                let found = null;
+                const renderList = getSortedRenderList();
+                
+                // 🌟 逆向矩阵检测 (Reverse Transform Raycasting)
+                for (let i = renderList.length - 1; i >= 0; i--) {
+                    const inst = renderList[i];
+                    const lDef = layers.find(l => l.id === inst.layer);
+                    if (!lDef || !lDef.visible) continue; 
+                    
+                    const asset = assets[inst.assetId];
+                    if (!asset) continue;
+
+                    const pos = isoToScreen(inst.gx, inst.gy, inst.gz);
+                    const drawW = asset.w * inst.scale;
+                    const drawH = asset.h * inst.scale;
+                    
+                    // 获取物体的绝对中心坐标
+                    const cx = pos.x;
+                    const cy = pos.y + gridH / 2 - drawH / 2 + inst.anchorY;
+
+                    // 计算鼠标到中心的向量
+                    let vx = worldX - cx;
+                    let vy = worldY - cy;
+
+                    // 如果物体被旋转了，将鼠标向量【反向旋转】回去，等效于 AABB 检测
+                    if (inst.rotation) {
+                        const rad = -inst.rotation * Math.PI / 180;
+                        const rx = vx * Math.cos(rad) - vy * Math.sin(rad);
+                        const ry = vx * Math.sin(rad) + vy * Math.cos(rad);
+                        vx = rx; vy = ry;
+                    }
+
+                    // 翻转(flipX)不影响长宽 AABB 的碰撞判定，直接检测边界
+                    if (vx >= -drawW / 2 && vx <= drawW / 2 && vy >= -drawH / 2 && vy <= drawH / 2) {
+                        found = inst; break;
+                    }
+                }
+                
+                if ((found && !hoveredInstance) || (!found && hoveredInstance) || (found && hoveredInstance && found.id !== hoveredInstance.id)) {
+                    hoveredInstance = found; requestRender();
+                }
+            }
+        });
+
+        window.addEventListener('mouseup', () => { isDragging = false; isPainting = false; viewport.style.cursor = 'crosshair'; });
+
+        viewport.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const zoomAmount = -e.deltaY * 0.001;
+            const newZoom = Math.max(0.2, Math.min(5, camera.zoom + zoomAmount));
+            const mPos = getMousePos(e);
+            
+            camera.x = mPos.x - (mPos.x - camera.x) * (newZoom / camera.zoom);
+            camera.y = mPos.y - (mPos.y - camera.y) * (newZoom / camera.zoom);
+            camera.zoom = newZoom; requestRender();
+        }, { passive: false });
+
+        // --- 导出逻辑 (自适应旋转的包围盒) ---
+        function exportScene() {
+            if(sceneInstances.length === 0 && !bg.img) return alert("场景是空的！");
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            
+            sceneInstances.forEach(inst => {
+                const asset = assets[inst.assetId];
+                const pos = isoToScreen(inst.gx, inst.gy, inst.gz);
+                const drawW = asset.w * inst.scale; const drawH = asset.h * inst.scale;
+                
+                const cx = pos.x; 
+                const cy = pos.y + gridH / 2 - drawH / 2 + inst.anchorY;
+                // 为了包容旋转带来的外扩，采用简单的外接圆半径估算边界
+                const r = Math.sqrt((drawW/2)**2 + (drawH/2)**2);
+
+                if(cx - r < minX) minX = cx - r; if(cy - r < minY) minY = cy - r;
+                if(cx + r > maxX) maxX = cx + r; if(cy + r > maxY) maxY = cy + r;
+            });
+
+            if (bg.img) {
+                const bw = bg.img.width * bg.scale; const bh = bg.img.height * bg.scale;
+                const bLeft = -bw/2 + bg.ox; const bTop = -bh/2 + bg.oy;
+                if (bLeft < minX) minX = bLeft; if (bTop < minY) minY = bTop;
+                if (bLeft + bw > maxX) maxX = bLeft + bw; if (bTop + bh > maxY) maxY = bTop + bh;
+            }
+
+            const padding = 100;
+            const expCanvas = document.createElement('canvas');
+            expCanvas.width = maxX - minX + padding * 2; expCanvas.height = maxY - minY + padding * 2;
+            const eCtx = expCanvas.getContext('2d');
+            eCtx.fillStyle = 'transparent'; eCtx.fillRect(0, 0, expCanvas.width, expCanvas.height);
+            eCtx.translate(-minX + padding, -minY + padding);
+
+            if (bg.img) {
+                eCtx.globalAlpha = bg.opacity;
+                const bw = bg.img.width * bg.scale; const bh = bg.img.height * bg.scale;
+                eCtx.drawImage(bg.img, -bw/2 + bg.ox, -bh/2 + bg.oy, bw, bh);
+                eCtx.globalAlpha = 1.0;
+            }
+
+            const renderList = getSortedRenderList();
+            renderList.forEach(inst => {
+                const lDef = layers.find(l => l.id === inst.layer);
+                if (!lDef || !lDef.visible) return;
+                const asset = assets[inst.assetId];
+                const pos = isoToScreen(inst.gx, inst.gy, inst.gz);
+                const drawW = asset.w * inst.scale; const drawH = asset.h * inst.scale;
+                
+                const cx = pos.x; 
+                const cy = pos.y + gridH / 2 - drawH / 2 + inst.anchorY;
+
+                eCtx.save();
+                eCtx.translate(cx, cy);
+                if (inst.rotation) eCtx.rotate(inst.rotation * Math.PI / 180);
+                if (inst.flipX) eCtx.scale(-1, 1);
+                eCtx.drawImage(asset.img, -drawW / 2, -drawH / 2, drawW, drawH);
+                eCtx.restore();
+            });
+
+            const a = document.createElement('a'); a.download = `Iso_Masterpiece_${Date.now()}.png`;
+            a.href = expCanvas.toDataURL('image/png'); a.click();
+        }
+
+        buildLayerUI();
+        resizeCanvas();
+    </script>
+</body>
+</html>

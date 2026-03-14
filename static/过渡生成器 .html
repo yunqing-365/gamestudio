@@ -1,0 +1,1139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Iso Transition Lab — 等轴测过渡生成器</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Anybody:wght@400;700;900&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:      #13110f;
+  --s1:      #1c1916;
+  --s2:      #252118;
+  --border:  rgba(255,220,140,0.08);
+  --border2: rgba(255,220,140,0.18);
+  --gold:    #e8c46a;
+  --gold2:   #c49a3a;
+  --amber:   #f0a030;
+  --rust:    #c45a20;
+  --text:    #d8cdb8;
+  --muted:   #6a5e4a;
+  --green:   #70c860;
+  --mono:    'DM Mono', monospace;
+  --display: 'Anybody', sans-serif;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── HEADER ── */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+  height: 58px;
+  border-bottom: 1px solid var(--border);
+  background: var(--s1);
+}
+.logo {
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: 15px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.logo em { color: var(--gold); font-style: normal; }
+.badge {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--gold);
+  background: rgba(232,196,106,0.1);
+  border: 1px solid rgba(232,196,106,0.25);
+  padding: 3px 10px;
+  border-radius: 3px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* ── LAYOUT ── */
+.app {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  height: calc(100vh - 58px);
+}
+
+/* ── LEFT PANEL ── */
+.panel {
+  background: var(--s1);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.panel::-webkit-scrollbar { width: 3px; }
+.panel::-webkit-scrollbar-thumb { background: var(--border2); }
+
+.sec {
+  padding: 18px 18px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.sec-title {
+  font-size: 8px;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.sec-title span { color: var(--gold); font-size: 8px; }
+
+/* tile upload slots */
+.tile-slots { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tile-slot {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  border: 1px dashed var(--border2);
+  background: var(--s2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+  position: relative;
+  overflow: hidden;
+}
+.tile-slot:hover { border-color: var(--gold); }
+.tile-slot canvas {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.tile-slot .slot-label {
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  position: relative;
+  z-index: 1;
+  background: rgba(19,17,15,0.7);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.tile-slot .slot-icon { font-size: 22px; }
+.tile-slot.loaded .slot-icon { display: none; }
+
+/* swap btn */
+.swap-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 7px;
+  border-radius: 6px;
+  border: 1px solid var(--border2);
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.swap-btn:hover { border-color: var(--gold); color: var(--gold); }
+
+/* blending params */
+.param { margin-bottom: 14px; }
+.param:last-child { margin-bottom: 0; }
+.param-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text);
+  margin-bottom: 7px;
+}
+.param-label .v { color: var(--amber); font-size: 10px; }
+input[type=range] {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 2px;
+  background: var(--border2);
+  border-radius: 2px;
+  outline: none;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 13px; height: 13px;
+  border-radius: 50%;
+  background: var(--gold);
+  border: 2px solid var(--bg);
+  cursor: pointer;
+  box-shadow: 0 0 6px rgba(232,196,106,0.4);
+}
+
+/* transition style grid */
+.style-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.style-btn {
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid var(--border2);
+  background: var(--s2);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  aspect-ratio: 1;
+}
+.style-btn:hover { border-color: var(--gold2); }
+.style-btn.active { border-color: var(--gold); background: rgba(232,196,106,0.08); }
+.style-btn svg { width: 28px; height: 28px; }
+.style-btn .sname {
+  font-size: 7px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.style-btn.active .sname { color: var(--gold); }
+
+/* generate btn */
+.gen-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(135deg, var(--gold), var(--gold2));
+  color: #1a1500;
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-bottom: 10px;
+}
+.gen-btn:hover { filter: brightness(1.1); }
+.gen-btn:active { transform: scale(0.98); }
+.gen-btn:disabled { opacity: 0.3; cursor: default; }
+
+.export-btn {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border2);
+  background: transparent;
+  color: var(--green);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.export-btn:hover { border-color: var(--green); background: rgba(112,200,96,0.06); }
+.export-btn:disabled { opacity: 0.3; cursor: default; }
+
+/* ── MAIN AREA ── */
+.main {
+  overflow: auto;
+  background:
+    repeating-conic-gradient(#181410 0% 25%, #131110 0% 50%)
+    0 0 / 18px 18px;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* result grid */
+.result-section-title {
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+.result-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.result-card {
+  background: var(--s1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 0.15s, transform 0.15s;
+  cursor: pointer;
+}
+.result-card:hover { border-color: var(--gold2); transform: translateY(-3px); }
+.result-card canvas {
+  display: block;
+  image-rendering: pixelated;
+}
+.result-card .card-label {
+  padding: 6px 10px;
+  font-size: 8px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--border);
+}
+.result-card .card-label .dl {
+  color: var(--gold);
+  cursor: pointer;
+  font-size: 10px;
+}
+.result-card .card-label .dl:hover { color: var(--amber); }
+
+/* empty state */
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: var(--muted);
+}
+.empty-icon { font-size: 48px; opacity: 0.3; }
+.empty-text { font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; }
+
+/* custom boundary painter */
+.boundary-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  background: var(--s2);
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border2);
+  cursor: crosshair;
+}
+.boundary-canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+.boundary-hint {
+  font-size: 8px; color: var(--muted); margin-top: 6px;
+  letter-spacing: 0.08em; line-height: 1.6;
+}
+.boundary-tools { display: flex; gap: 6px; margin-bottom: 8px; }
+.btool {
+  flex: 1; padding: 5px 0; border-radius: 5px;
+  border: 1px solid var(--border2); background: var(--s2);
+  color: var(--muted); font-family: var(--mono); font-size: 8px;
+  letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer;
+}
+.btool:hover { border-color: var(--gold2); color: var(--gold2); }
+.btool.active { border-color: var(--gold); color: var(--gold); background: rgba(232,196,106,0.08); }
+.brush-size-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.brush-size-row label { font-size: 8px; color: var(--muted); white-space: nowrap; }
+
+/* 修复进度条样式选择器缺失问题 */
+.progress-bar {
+  height:2px;
+  background:var(--border2);
+  border-radius:2px;
+  overflow:hidden;
+  margin-top:10px;
+  display:none;
+}
+.progress-bar.show { display: block; }
+.progress-fill { height: 100%; background: var(--gold); border-radius: 2px; width: 0%; transition: width 0.1s; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Iso <em>Transition</em> Lab</div>
+  <div class="badge">Tile Blending Engine v1.0</div>
+</header>
+
+<div class="app">
+
+  <!-- LEFT PANEL -->
+  <div class="panel">
+
+    <!-- Tile Inputs -->
+    <div class="sec">
+      <div class="sec-title">输入 Tiles <span>SOURCE</span></div>
+      <div class="tile-slots">
+        <div class="tile-slot" id="slotA" onclick="document.getElementById('fileA').click()" title="点击导入 Tile A">
+          <div class="slot-icon">🟫</div>
+          <div class="slot-label">Tile A</div>
+          <canvas id="thumbA"></canvas>
+        </div>
+        <div class="tile-slot" id="slotB" onclick="document.getElementById('fileB').click()" title="点击导入 Tile B">
+          <div class="slot-icon">🟩</div>
+          <div class="slot-label">Tile B</div>
+          <canvas id="thumbB"></canvas>
+        </div>
+      </div>
+      <button class="swap-btn" onclick="swapTiles()">⇄ 交换 A / B</button>
+    </div>
+
+    <!-- Transition Styles -->
+    <div class="sec">
+      <div class="sec-title">过渡样式 <span>STYLE</span></div>
+      <div class="style-grid" id="styleGrid">
+        <!-- filled by JS -->
+      </div>
+    </div>
+
+    <!-- Blend Params -->
+    <div class="sec">
+      <div class="sec-title">融合参数 <span>BLEND</span></div>
+      <div class="param">
+        <div class="param-label">边界交错度 (Warp)<span class="v" id="noiseVal">85%</span></div>
+        <input type="range" id="noiseRange" min="0" max="100" value="85" step="1"
+          oninput="document.getElementById('noiseVal').textContent=this.value+'%'">
+      </div>
+      <div class="param">
+        <div class="param-label">接缝阴影 (Seam)<span class="v" id="shadowVal">20%</span></div>
+        <input type="range" id="shadowRange" min="0" max="100" value="20" step="1"
+          oninput="document.getElementById('shadowVal').textContent=this.value+'%'">
+      </div>
+      <input type="range" id="featherRange" min="2" max="60" value="10" step="1" style="display:none">
+      <div class="param">
+        <div class="param-label">预览缩放 (Scale)<span class="v" id="scaleVal">2×</span></div>
+        <input type="range" id="scaleRange" min="1" max="4" value="2" step="1"
+          oninput="document.getElementById('scaleVal').textContent=this.value+'×'">
+      </div>
+    </div>
+
+    <!-- Custom Boundary Painter -->
+    <div class="sec">
+      <div class="sec-title">自定义边界 <span>BOUNDARY</span></div>
+      <div class="boundary-tools">
+        <button class="btool active" id="btoolDraw" onclick="setBtool('draw')">✏ 画笔</button>
+        <button class="btool" id="btoolErase" onclick="setBtool('erase')">⌫ 橡皮</button>
+        <button class="btool" id="btoolClear" onclick="clearBoundary()">✕ 清除</button>
+      </div>
+      <div class="brush-size-row">
+        <label>笔刷</label>
+        <input type="range" id="brushSize" min="1" max="12" value="4" step="1" style="flex:1">
+        <span id="brushSizeVal" style="font-size:8px;color:var(--amber);width:20px">4</span>
+      </div>
+      <div class="boundary-wrap" id="boundaryWrap">
+        <canvas id="boundaryCanvas" class="boundary-canvas"></canvas>
+      </div>
+      <div class="boundary-hint">
+        在菱形上涂画边界线 → 生成时自动替换选中样式的蒙版。<br>清除后恢复使用预设样式。
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="sec">
+      <button class="gen-btn" id="genBtn" disabled onclick="generateAll()">生成所有过渡</button>
+      <button class="export-btn" id="exportBtn" disabled onclick="exportAll()">⬇ 批量导出 PNG</button>
+      <div class="progress-bar" id="progressBar">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+    </div>
+
+  </div><!-- /panel -->
+
+  <!-- MAIN RESULT AREA -->
+  <div class="main" id="mainArea">
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">⬡</div>
+      <div class="empty-text">导入两张 Tile 后点击生成</div>
+    </div>
+    <div id="resultContainer" style="display:none"></div>
+  </div>
+
+</div><!-- /app -->
+
+<input type="file" id="fileA" accept="image/*" style="display:none">
+<input type="file" id="fileB" accept="image/*" style="display:none">
+
+<script>
+// ══════════════════════════════════════════════
+// TRANSITION STYLE DEFINITIONS
+// ══════════════════════════════════════════════
+const STYLES = [
+  {
+    id: 'edge_right',
+    name: '直边·右',
+    maskFn: (x, y, w, h) => {
+      const nx = x/w - 0.5, ny = y/h - 0.5;
+      return nx + ny * 2;
+    },
+    icon: `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="0,16 16,8 32,16 16,24" fill="#3a3020"/>
+      <polygon points="16,8 32,0 32,16" fill="#c49a3a" opacity="0.8"/>
+      <line x1="16" y1="8" x2="32" y2="16" stroke="#e8c46a" stroke-width="1.5"/>
+    </svg>`,
+  },
+  {
+    id: 'edge_left',
+    name: '直边·左',
+    maskFn: (x, y, w, h) => {
+      const nx = x/w - 0.5, ny = y/h - 0.5;
+      return -(nx - ny * 2);
+    },
+    icon: `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="0,16 16,8 32,16 16,24" fill="#3a3020"/>
+      <polygon points="0,16 0,32 16,24" fill="#c49a3a" opacity="0.8"/>
+      <line x1="0" y1="16" x2="16" y2="24" stroke="#e8c46a" stroke-width="1.5"/>
+    </svg>`,
+  },
+  {
+    id: 'edge_front',
+    name: '直边·前',
+    maskFn: (x, y, w, h) => {
+      return (y/h - 0.5) * 2;
+    },
+    icon: `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="0,16 16,8 32,16 16,24" fill="#3a3020"/>
+      <polygon points="0,16 16,24 32,16 32,32 0,32" fill="#c49a3a" opacity="0.8"/>
+      <line x1="0" y1="16" x2="32" y2="16" stroke="#e8c46a" stroke-width="1.5"/>
+    </svg>`,
+  },
+  {
+    id: 'corner_outer_ne',
+    name: '外角·右',
+    maskFn: (x, y, w, h) => {
+      const nx = x/w - 0.5, ny = y/h - 0.5;
+      const d1 = nx + ny * 2;
+      const d2 = nx - ny * 2;
+      return Math.max(d1, d2);
+    },
+    icon: `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="0,16 16,8 32,16 16,24" fill="#3a3020"/>
+      <polygon points="24,8 32,12 32,20 24,24 16,16" fill="#c49a3a" opacity="0.85"/>
+      <polyline points="24,8 32,12 32,20 24,24" stroke="#e8c46a" stroke-width="1.5" fill="none"/>
+    </svg>`,
+  },
+  {
+    id: 'corner_outer_sw',
+    name: '外角·左',
+    maskFn: (x, y, w, h) => {
+      const nx = x/w - 0.5, ny = y/h - 0.5;
+      const d1 = -(nx + ny * 2);
+      const d2 = -(nx - ny * 2);
+      return Math.max(d1, d2);
+    },
+    icon: `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="0,16 16,8 32,16 16,24" fill="#3a3020"/>
+      <polygon points="8,8 16,4 16,12 8,16 0,12" fill="#c49a3a" opacity="0.85"/>
+      <polyline points="8,8 0,12 0,20 8,24" stroke="#e8c46a" stroke-width="1.5" fill="none"/>
+    </svg>`,
+  },
+  {
+    id: 'corner_inner_ne',
+    name: '内角·右',
+    maskFn: (x, y, w, h) => {
+      const nx = x/w - 0.5, ny = y/h - 0.5;
+      const dLeft  = -(nx - ny * 2);
+      const dFront = (ny);
+      return Math.min(dLeft, dFront);
+    },
+    icon: `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="0,16 16,8 32,16 16,24" fill="#c49a3a" opacity="0.75"/>
+      <polygon points="0,16 8,20 16,24 8,28 0,24" fill="#3a3020"/>
+      <polyline points="0,16 8,20 16,24" stroke="#e8c46a" stroke-width="1.5" fill="none"/>
+    </svg>`,
+  },
+  {
+    id: 'corner_inner_sw',
+    name: '内角·左',
+    maskFn: (x, y, w, h) => {
+      const nx = x/w - 0.5, ny = y/h - 0.5;
+      const dRight = nx + ny * 2;
+      const dFront = ny;
+      return Math.min(dRight, dFront);
+    },
+    icon: `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="0,16 16,8 32,16 16,24" fill="#c49a3a" opacity="0.75"/>
+      <polygon points="32,16 24,20 16,24 24,28 32,24" fill="#3a3020"/>
+      <polyline points="32,16 24,20 16,24" stroke="#e8c46a" stroke-width="1.5" fill="none"/>
+    </svg>`,
+  },
+  {
+    id: 'iso_diag_AB',
+    name: '等轴·纵切',
+    maskFn: (x, y, w, h) => {
+      const nx = x/w - 0.5, ny = y/h - 0.5;
+      return nx - ny * 2;
+    },
+    icon: `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="0,16 16,8 32,16 16,24" fill="#3a3020"/>
+      <polygon points="0,16 16,8 16,24" fill="#c49a3a" opacity="0.85"/>
+      <line x1="16" y1="8" x2="0" y2="16" stroke="#e8c46a" stroke-width="1.5"/>
+      <line x1="0" y1="16" x2="16" y2="24" stroke="#e8c46a" stroke-width="1.5"/>
+    </svg>`,
+  },
+  {
+    id: 'iso_diag_BA',
+    name: '等轴·横切',
+    maskFn: (x, y, w, h) => {
+      const nx = x/w - 0.5, ny = y/h - 0.5;
+      return nx + ny * 2;
+    },
+    icon: `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="0,16 16,8 32,16 16,24" fill="#3a3020"/>
+      <polygon points="16,8 32,16 16,24" fill="#c49a3a" opacity="0.85"/>
+      <line x1="16" y1="8" x2="32" y2="16" stroke="#e8c46a" stroke-width="1.5"/>
+      <line x1="32" y1="16" x2="16" y2="24" stroke="#e8c46a" stroke-width="1.5"/>
+    </svg>`,
+  },
+  {
+    id: 'tshape_top',
+    name: 'T形·上顶',
+    maskFn: (x, y, w, h) => {
+      const nx = x/w - 0.5, ny = y/h - 0.5;
+      const dUp1 = -(nx + ny * 2);
+      const dUp2 = nx - ny * 2;
+      const topCorner = Math.min(dUp1, dUp2);
+      return -topCorner;
+    },
+    icon: `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="0,16 16,8 32,16 16,24" fill="#c49a3a" opacity="0.75"/>
+      <polygon points="16,8 20,11 16,14 12,11" fill="#3a3020"/>
+      <line x1="16" y1="8" x2="12" y2="11" stroke="#e8c46a" stroke-width="1"/>
+      <line x1="16" y1="8" x2="20" y2="11" stroke="#e8c46a" stroke-width="1"/>
+    </svg>`,
+  },
+  {
+    id: 'cross',
+    name: '十字带',
+    maskFn: (x, y, w, h) => {
+      const nx = x/w - 0.5, ny = y/h - 0.5;
+      const band = 0.25;
+      const onRight = Math.abs(nx + ny * 2) < band;
+      const onLeft  = Math.abs(nx - ny * 2) < band;
+      return (onRight || onLeft) ? 0.3 : -0.3;
+    },
+    icon: `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="0,16 16,8 32,16 16,24" fill="#3a3020"/>
+      <polygon points="16,8 22,12 16,16 10,12" fill="#c49a3a" opacity="0.85"/>
+      <polygon points="16,16 22,20 16,24 10,20" fill="#c49a3a" opacity="0.85"/>
+      <line x1="10" y1="12" x2="22" y2="20" stroke="#e8c46a" stroke-width="1"/>
+      <line x1="22" y1="12" x2="10" y2="20" stroke="#e8c46a" stroke-width="1"/>
+    </svg>`,
+  },
+  {
+    id: 'checkerboard',
+    name: '棋盘格',
+    maskFn: (x, y, w, h) => {
+      const cells = 4;
+      const nx = x/w, ny = y/h;
+      const u = Math.floor((nx + ny) * cells);
+      const v = Math.floor((nx - ny + 1) * cells);
+      return (u + v) % 2 === 0 ? -0.4 : 0.4;
+    },
+    icon: `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="0,16 16,8 32,16 16,24" fill="#3a3020"/>
+      <polygon points="16,8 24,12 16,16 8,12" fill="#c49a3a" opacity="0.85"/>
+      <polygon points="16,16 24,20 16,24 8,20" fill="#c49a3a" opacity="0.85"/>
+      <polygon points="8,12 16,16 8,20 0,16" fill="#c49a3a" opacity="0.85"/>
+      <polygon points="24,12 32,16 24,20 16,16" fill="#c49a3a" opacity="0.85"/>
+    </svg>`,
+  },
+];
+
+// ══════════════════════════════════════════════
+// NOISE SYSTEM (修复版)
+// ══════════════════════════════════════════════
+const _noisePerm = (() => {
+  const p = Array.from({length:256}, (_,i)=>i);
+  let s = 12345;
+  const rng = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 0xffffffff; };
+  for (let i=255;i>0;i--) { const j=Math.floor(rng()*(i+1)); [p[i],p[j]]=[p[j],p[i]]; }
+  return [...p,...p];
+})();
+
+function noise2(x, y) {
+  const X=Math.floor(x)&255, Y=Math.floor(y)&255;
+  x-=Math.floor(x); y-=Math.floor(y);
+  const u=x*x*x*(x*(x*6-15)+10), v=y*y*y*(y*(y*6-15)+10);
+  const g=(h,gx,gy)=>((h&1)?-gx:gx)+((h&2)?-gy:gy);
+  const a=_noisePerm[X]+Y, b=_noisePerm[X+1]+Y;
+  return lerp(lerp(g(_noisePerm[a],x,y),g(_noisePerm[b],x-1,y),u),
+              lerp(g(_noisePerm[a+1],x,y-1),g(_noisePerm[b+1],x-1,y-1),u),v);
+}
+
+// 修复：归一化分母包含所有噪声分量
+function roughFbm(x, y, tileW, tileH) {
+  const normX = x / tileW, normY = y / tileH;
+  const pixelX = x * 0.15, pixelY = y * 0.15;
+  
+  let val = noise2(normX * 2.5, normY * 2.5) * 0.8;
+  val += noise2(normX * 8, normY * 8) * 0.4;
+  val += noise2(pixelX * 16, pixelY * 16) * 0.3;
+  
+  const gridX = Math.floor(x / 4), gridY = Math.floor(y / 4);
+  val += (noise2(gridX * 3, gridY * 3) * 0.2);
+  
+  const blockX = Math.floor(x / 8), blockY = Math.floor(y / 8);
+  val += (Math.floor(noise2(blockX, blockY) * 2) / 2) * 0.15;
+
+  // 修复：分母包含所有分量总和（0.8+0.4+0.3+0.2+0.15=1.85）
+  return val / 1.85;
+}
+ 
+// 修复：移除不稳定的Math.random，限制jitter范围
+function pixelHardStep(t, edge = 0) {
+  const jitter = (noise2(t*100, edge*100) * 0.05); // 减小抖动幅度
+  const result = t + jitter > edge ? 1 : 0;
+  return result;
+}
+
+function fbm(x, y, octaves, roughness) {
+  let val = 0, amp = 1, freq = 1, maxAmp = 0;
+  for (let i = 0; i < octaves; i++) {
+    val += noise2(x * freq, y * freq) * amp;
+    maxAmp += amp;
+    amp *= roughness;
+    freq *= 2.1;
+  }
+  return val / maxAmp;
+}
+function lerp(a,b,t){return a+t*(b-a);}
+function smoothstep(t){return t*t*(3-2*t);}
+function smootherstep(t){return t*t*t*(t*(t*6-15)+10);}
+
+// ══════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════
+let tileA = null, tileB = null;
+let tileAW=0, tileAH=0, tileBW=0, tileBH=0;
+let selectedStyles = new Set(['edge_right','edge_left','edge_front','corner_inner_ne','corner_inner_sw','corner_outer_ne']);
+let generatedResults = [];
+let boundaryData = null;
+let btool = 'draw';
+let bPainting = false;
+const BC_W = 128, BC_H = 64;
+
+// ══════════════════════════════════════════════
+// BOUNDARY PAINTER
+// ══════════════════════════════════════════════
+function initBoundaryCanvas() {
+  const wrap = document.getElementById('boundaryWrap');
+  const bc   = document.getElementById('boundaryCanvas');
+  bc.width = BC_W; bc.height = BC_H;
+
+  function drawBG() {
+    const ctx = bc.getContext('2d');
+    ctx.clearRect(0, 0, BC_W, BC_H);
+    ctx.fillStyle = '#1a1714';
+    ctx.fillRect(0, 0, BC_W, BC_H);
+    
+    ctx.fillStyle = '#2a2520';
+    ctx.beginPath();
+    ctx.moveTo(BC_W/2, 2);
+    ctx.lineTo(BC_W-2, BC_H/2);
+    ctx.lineTo(BC_W/2, BC_H-2);
+    ctx.lineTo(2, BC_H/2);
+    ctx.closePath();
+    ctx.fill();
+    
+    ctx.fillStyle = '#c49a3a88';
+    ctx.font = '9px monospace';
+    ctx.fillText('A', BC_W/2-12, BC_H/2-4);
+    ctx.fillText('B', BC_W/2+6, BC_H/2+10);
+    
+    if (boundaryData) repaintStrokes(ctx);
+  }
+
+  function repaintStrokes(ctx) {
+    const img = ctx.createImageData(BC_W, BC_H);
+    for (let i = 0; i < BC_W * BC_H; i++) {
+      if (boundaryData[i] !== 0) {
+        const v = boundaryData[i] > 0 ? 255 : 0;
+        img.data[i*4]   = v===255 ? 80  : 40;
+        img.data[i*4+1] = v===255 ? 200 : 40;
+        img.data[i*4+2] = v===255 ? 80  : 40;
+        img.data[i*4+3] = 180;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  function paint(e) {
+    if (!bPainting) return;
+    const rect = bc.getBoundingClientRect();
+    const scaleX = BC_W / rect.width, scaleY = BC_H / rect.height;
+    const cx = (e.clientX - rect.left) * scaleX;
+    const cy = (e.clientY - rect.top)  * scaleY;
+    const r  = parseInt(document.getElementById('brushSize').value);
+    
+    if (!boundaryData) boundaryData = new Float32Array(BC_W * BC_H);
+    
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (dx*dx + dy*dy > r*r) continue;
+        const px = Math.round(cx+dx), py = Math.round(cy+dy);
+        if (px < 0 || py < 0 || px >= BC_W || py >= BC_H) continue;
+        boundaryData[py * BC_W + px] = btool === 'draw' ? 1 : 0;
+      }
+    }
+    
+    const ctx = bc.getContext('2d');
+    drawBG();
+  }
+
+  bc.addEventListener('mousedown', e => { bPainting = true; paint(e); });
+  bc.addEventListener('mousemove', paint);
+  bc.addEventListener('mouseup',   () => { bPainting = false; });
+  bc.addEventListener('mouseleave',() => { bPainting = false; });
+
+  bc.addEventListener('touchstart', e => { bPainting = true; paint(e.touches[0]); e.preventDefault(); }, {passive:false});
+  bc.addEventListener('touchmove',  e => { paint(e.touches[0]); e.preventDefault(); }, {passive:false});
+  bc.addEventListener('touchend',   () => { bPainting = false; });
+
+  document.getElementById('brushSize').oninput = e => {
+    document.getElementById('brushSizeVal').textContent = e.target.value;
+  };
+
+  drawBG();
+}
+
+function setBtool(t) {
+  btool = t;
+  document.getElementById('btoolDraw').classList.toggle('active', t==='draw');
+  document.getElementById('btoolErase').classList.toggle('active', t==='erase');
+}
+
+function clearBoundary() {
+  boundaryData = null;
+  initBoundaryCanvas();
+}
+
+function makeBoundaryMaskFn() {
+  if (!boundaryData) return null;
+  
+  return (x, y, w, h) => {
+    const bx = Math.min(BC_W-1, Math.max(0, Math.round(x / w * BC_W)));
+    const by = Math.min(BC_H-1, Math.max(0, Math.round(y / h * BC_H)));
+    const v = boundaryData[by * BC_W + bx];
+
+    if (v === 1) return 0.8;
+    
+    let nearB = false, nearDist = 999;
+    for (let dy = -4; dy <= 4; dy++) {
+      for (let dx = -4; dx <= 4; dx++) {
+        const nx = bx+dx, ny = by+dy;
+        if (nx<0||ny<0||nx>=BC_W||ny>=BC_H) continue;
+        if (boundaryData[ny*BC_W+nx] === 1) {
+          const d = Math.sqrt(dx*dx + dy*dy);
+          if (d < nearDist) { nearDist = d; nearB = true; }
+        }
+      }
+    }
+    
+    const noise = roughFbm(x, y, w, h) * 0.3;
+    if (!nearB) return -0.8 + noise;
+    return (nearDist - 4) / 4 * -0.8 + noise;
+  };
+}
+
+// ══════════════════════════════════════════════
+// STYLE BUTTONS
+// ══════════════════════════════════════════════
+function buildStyleGrid() {
+  const grid = document.getElementById('styleGrid');
+  grid.innerHTML = '';
+  STYLES.forEach(s => {
+    const btn = document.createElement('button');
+    btn.className = 'style-btn' + (selectedStyles.has(s.id) ? ' active' : '');
+    btn.innerHTML = s.icon + `<div class="sname">${s.name}</div>`;
+    btn.title = s.name;
+    btn.onclick = () => {
+      if (selectedStyles.has(s.id)) selectedStyles.delete(s.id);
+      else selectedStyles.add(s.id);
+      btn.classList.toggle('active');
+    };
+    grid.appendChild(btn);
+  });
+}
+
+// ══════════════════════════════════════════════
+// FILE LOADING
+// ══════════════════════════════════════════════
+document.getElementById('fileA').onchange = e => loadTile(e.target.files[0], 'A');
+document.getElementById('fileB').onchange = e => loadTile(e.target.files[0], 'B');
+
+function loadTile(file, which) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = img.width; c.height = img.height;
+      c.getContext('2d').drawImage(img, 0, 0);
+      const data = c.getContext('2d').getImageData(0, 0, img.width, img.height);
+
+      if (which === 'A') {
+        tileA = data; tileAW = img.width; tileAH = img.height;
+        renderThumb('thumbA', 'slotA', data, img.width, img.height, 'Tile A');
+      } else {
+        tileB = data; tileBW = img.width; tileBH = img.height;
+        renderThumb('thumbB', 'slotB', data, img.width, img.height, 'Tile B');
+      }
+      checkReady();
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderThumb(canvasId, slotId, imgData, w, h, label) {
+  const c = document.getElementById(canvasId);
+  c.width = w; c.height = h;
+  c.getContext('2d').putImageData(imgData, 0, 0);
+  c.style.display = 'block';
+  const slot = document.getElementById(slotId);
+  slot.classList.add('loaded');
+}
+
+function swapTiles() {
+  [tileA, tileB] = [tileB, tileA];
+  [tileAW, tileBW] = [tileBW, tileAW];
+  [tileAH, tileBH] = [tileBH, tileAH];
+  if (tileA) renderThumb('thumbA','slotA',tileA,tileAW,tileAH,'Tile A');
+  if (tileB) renderThumb('thumbB','slotB',tileB,tileBW,tileBH,'Tile B');
+  checkReady();
+}
+
+function checkReady() {
+  const ok = tileA && tileB;
+  document.getElementById('genBtn').disabled = !ok;
+}
+
+// ══════════════════════════════════════════════
+// RESAMPLE IMAGE DATA
+// ══════════════════════════════════════════════
+function resampleImageData(src, sw, sh, dw, dh) {
+  const dst = new ImageData(dw, dh);
+  const scx = sw / dw, scy = sh / dh;
+  for (let y = 0; y < dh; y++) {
+    for (let x = 0; x < dw; x++) {
+      const sx = (x + 0.5) * scx - 0.5;
+      const sy = (y + 0.5) * scy - 0.5;
+      const x0 = Math.max(0, Math.min(sw-1, Math.floor(sx)));
+      const y0 = Math.max(0, Math.min(sh-1, Math.floor(sy)));
+      const x1 = Math.min(sw-1, x0+1);
+      const y1 = Math.min(sh-1, y0+1);
+      const tx = sx - x0, ty = sy - y0;
+      const si00=(y0*sw+x0)*4, si10=(y0*sw+x1)*4, si01=(y1*sw+x0)*4, si11=(y1*sw+x1)*4;
+      const d = src.data, o = (y*dw+x)*4;
+      for (let c=0;c<4;c++) {
+        dst.data[o+c] = d[si00+c]*(1-tx)*(1-ty)+d[si10+c]*tx*(1-ty)+d[si01+c]*(1-tx)*ty+d[si11+c]*tx*ty;
+      }
+    }
+  }
+  return dst;
+}
+
+// ══════════════════════════════════════════════
+// CORE BLEND ENGINE (修复全黑问题)
+// ══════════════════════════════════════════════
+function blendTiles(style, scale = 2) {
+  // 1. 初始化输出画布（保证A/B tile尺寸一致）
+  const outW = Math.max(tileAW, tileBW);
+  const outH = Math.max(tileAH, tileBH);
+  const canvas = document.createElement('canvas');
+  canvas.width = outW;
+  canvas.height = outH;
+  const ctx = canvas.getContext('2d');
+  
+  // 2. 适配tile尺寸（如果A/B尺寸不同，重采样到一致）
+  let tileAData = tileA;
+  let tileBData = tileB;
+  if (tileAW !== outW || tileAH !== outH) {
+    tileAData = resampleImageData(tileA, tileAW, tileAH, outW, outH);
+  }
+  if (tileBW !== outW || tileBH !== outH) {
+    tileBData = resampleImageData(tileB, tileBW, tileBH, outW, outH);
+  }
+
+  // 3. 创建输出ImageData
+  const outData = ctx.createImageData(outW, outH);
+
+  // 【核心参数】
+  const warpStrength = parseInt(document.getElementById('noiseRange').value) / 50; // 扰动幅度
+  const featherPx = 2; // 极窄过渡带（保证硬切）
+  const shadowStrength = parseInt(document.getElementById('shadowVal').value) / 100;
+
+  // 选择蒙版函数（系统预设 / 自定义手绘）
+  const maskFn = boundaryData ? makeBoundaryMaskFn() : style.maskFn;
+
+  // 4. 逐像素计算（核心：纯A/纯B像素，无混合）
+  for (let y = 0; y < outH; y++) {
+    for (let x = 0; x < outW; x++) {
+      // 4.1 基础SDF（形状蒙版）
+      let d = maskFn(x, y, outW, outH);
+      
+      // 4.2 像素级粗糙噪声扰动（核心：模拟犬牙交错）
+      const noise = roughFbm(x, y, outW, outH);
+      d = d + (noise * warpStrength);
+      
+      // 4.3 像素级硬过渡（要么A要么B，无混色）
+      const t = pixelHardStep(d / featherPx);
+      
+      // 4.4 取纯A或纯B像素（无颜色混合）
+      const pxIdx = (y * outW + x) * 4;
+      if (t > 0.5) {
+        // B侧像素：直接取B的原始像素
+        const bPx = (y * outW + x) * 4;
+        outData.data[pxIdx] = tileBData.data[bPx];
+        outData.data[pxIdx+1] = tileBData.data[bPx+1];
+        outData.data[pxIdx+2] = tileBData.data[bPx+2];
+        outData.data[pxIdx+3] = tileBData.data[bPx+3] || 255;
+      } else {
+        // A侧像素：直接取A的原始像素
+        const aPx = (y * outW + x) * 4;
+        outData.data[pxIdx] = tileAData.data[aPx];
+        outData.data[pxIdx+1] = tileAData.data[aPx+1];
+        outData.data[pxIdx+2] = tileAData.data[aPx+2];
+        outData.data[pxIdx+3] = tileAData.data[aPx+3] || 255;
+      }
+
+      // 4.5 接缝阴影（可选：增强高低感）
+      if (Math.abs(d) < featherPx * 2) {
+        const shadow = 1 - (Math.abs(d) / (featherPx * 2)) * shadowStrength;
+        outData.data[pxIdx] *= shadow;
+        outData.data[pxIdx+1] *= shadow;
+        outData.data[pxIdx+2] *= shadow;
+      }
+    }
+  }
+
+  // 5. 渲染到画布并返回
+  ctx.putImageData(outData, 0, 0);
+  return canvas;
+}
+// ══════════════════════════════════════════════
+// GENERATE ALL
+// ══════════════════════════════════════════════
+async function generateAll() {
+  if (!tileA || !tileB) return;
+  const selected = STYLES.filter(s => selectedStyles.has(s.id));
+  if (selected.length === 0) return;
+
+  const customMask = makeBoundaryMaskFn();
+
+  generatedResults = [];
+  document.getElementById('emptyState').style.display = 'none';
+  const rc = document.getElementById('resultContainer');
+  rc.style.display = 'block';
+  rc.innerHTML = '';
+  document.getElementById('progressBar').classList.add('show');
+  document.getElementById('genBtn').disabled = true;
+  document.getElementById('exportBtn').disabled = true;
+
+  const scale = parseInt(document.getElementById('scaleRange').value);
+
+  const toGenerate = customMask
+    ? selected.map(s => ({ ...s, maskFn: customMask, name: s.name + '·自定义' }))
+    : selected;
+
+  const section = document.createElement('div');
+  const title = document.createElement('div');
+  title.className = 'result-section-title';
+  title.textContent = customMask
+    ? `自定义边界 × ${toGenerate.length} 种样式 — 点击卡片下载单张`
+    : `共 ${selected.length} 种过渡样式 — 点击卡片下载单张`;
+  section.appendChild(title);
+  const grid = document.createElement('div');
+  grid.className = 'result-grid';
+  section.appendChild(grid);
+  rc.appendChild(section);
+
+  for (let i = 0; i < toGenerate.length; i++) {
+    const s = toGenerate[i];
+    document.getElementById('progressFill').style.width = `${(i/toGenerate.length)*100}%`;
+    await new Promise(r => setTimeout(r, 0));
+
+    const rawCanvas = blendTiles(s);
+
+    // 缩放预览
+    const displayCanvas = document.createElement('canvas');
+    displayCanvas.width  = rawCanvas.width  * scale;
+    displayCanvas.height = rawCanvas.height * scale;
+    const dctx = displayCanvas.getContext('2d');
+    dctx.imageSmoothingEnabled = false;
+    dctx.drawImage(rawCanvas, 0, 0, displayCanvas.width, displayCanvas.height);
+
+    generatedResults.push({ id: s.id, name: s.name, raw: rawCanvas, display: displayCanvas });
+
+    // 创建结果卡片
+    const card = document.createElement('div');
+    card.className = 'result-card';
+
+    const labelDiv = document.createElement('div');
+    labelDiv.className = 'card-label';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = s.name;
+    labelDiv.appendChild(nameSpan);
+
+    const dlBtn = document.createElement('span');
+    dlBtn.className = 'dl';
+    dlBtn.textContent = '⬇';
+    dlBtn.title = '下载此帧';
+    dlBtn.onclick = () => downloadCanvas(rawCanvas, `transition_${s.id}.png`);
+    labelDiv.appendChild(dlBtn);
+
+    card.appendChild(displayCanvas);
+    card.appendChild(labelDiv);
+    card.onclick = (e) => { if (e.target !== dlBtn) downloadCanvas(rawCanvas, `transition_${s.id}.png`); };
+    grid.appendChild(card);
+  }
+
+  document.getElementById('progressFill').style.width = '100%';
+  setTimeout(() => {
+    document.getElementById('progressBar').classList.remove('show');
+    document.getElementById('progressFill').style.width = '0%';
+  }, 400);
+  document.getElementById('genBtn').disabled = false;
+  document.getElementById('exportBtn').disabled = false;
+}
+
+function downloadCanvas(canvas, filename) {
+  const a = document.createElement('a');
+  a.download = filename;
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+}
+
+async function exportAll() {
+  for (let i = 0; i < generatedResults.length; i++) {
+    await new Promise(r => setTimeout(r, 180));
+    downloadCanvas(generatedResults[i].raw, `transition_${generatedResults[i].id}.png`);
+  }
+}
+
+// ══════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════
+initBoundaryCanvas();
+buildStyleGrid();
+</script>
+</body>
+</html>

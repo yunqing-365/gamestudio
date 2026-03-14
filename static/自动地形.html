@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto-Tilemask Forge v4.0 - 终极柔和熔合版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .pixelated { image-rendering: pixelated; image-rendering: crisp-edges; }
+        .checkerboard {
+            background-image: linear-gradient(45deg, #f1f5f9 25%, transparent 25%), 
+                              linear-gradient(-45deg, #f1f5f9 25%, transparent 25%), 
+                              linear-gradient(45deg, transparent 75%, #f1f5f9 75%), 
+                              linear-gradient(-45deg, transparent 75%, #f1f5f9 75%);
+            background-size: 16px 16px; background-color: #ffffff;
+        }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 6px; background: #e2e8f0; border-radius: 10px; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 20px; width: 20px; border-radius: 10px;
+            background: #10b981; cursor: pointer; margin-top: -7px; border: 3px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen font-sans antialiased p-4 lg:p-10">
+
+    <div class="max-w-[1700px] mx-auto space-y-8">
+        <header class="flex flex-col md:flex-row justify-between items-center bg-white p-8 rounded-[3rem] shadow-xl border border-slate-100">
+            <div class="flex items-center gap-6">
+                <div class="w-16 h-16 bg-gradient-to-tr from-emerald-500 to-teal-500 rounded-2xl flex items-center justify-center text-white text-3xl shadow-lg">🌿</div>
+                <div>
+                    <h1 class="text-3xl font-black text-slate-900 tracking-tighter uppercase italic">Auto-Tile <span class="text-emerald-500">Forge v4.0</span></h1>
+                    <p class="text-slate-400 text-[10px] font-bold uppercase tracking-[0.3em] mt-1">Alpha Compositing & Soft Blend Engine</p>
+                </div>
+            </div>
+            <div class="flex gap-4 mt-6 md:mt-0">
+                <button onclick="generateTileset()" class="px-8 py-3 bg-slate-900 text-white text-xs font-black uppercase rounded-xl shadow-lg hover:bg-slate-800 transition active:scale-95 tracking-widest">
+                    🔄 强制重绘
+                </button>
+                <button onclick="exportSpritesheet()" class="px-8 py-3 bg-emerald-500 text-white text-xs font-black uppercase rounded-xl shadow-lg shadow-emerald-200 hover:bg-emerald-600 transition active:scale-95 tracking-widest flex items-center gap-2">
+                    💾 导出 47格引擎图集
+                </button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            <div class="lg:col-span-4 space-y-6 max-h-[80vh] overflow-y-auto scrollbar-hide pr-2">
+                
+                <div class="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 space-y-6 relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+                    <div class="flex justify-between items-center border-b border-slate-100 pb-4">
+                        <h3 class="text-xs font-black text-slate-700 uppercase tracking-widest">1. 素材导入 (Base & Top)</h3>
+                        <span id="resBadge" class="text-[9px] bg-emerald-100 text-emerald-700 px-2 py-1 rounded font-bold">Waiting...</span>
+                    </div>
+                    
+                    <div class="flex gap-4">
+                        <div class="flex-1 flex flex-col items-center gap-3">
+                            <div class="w-full aspect-square rounded-2xl border-4 border-slate-200 flex items-center justify-center relative group overflow-hidden bg-slate-50 cursor-pointer shadow-inner" onclick="document.getElementById('baseUpload').click()">
+                                <canvas id="basePreview" class="pixelated w-full h-full object-contain absolute inset-0 p-2"></canvas>
+                                <div class="absolute inset-0 bg-slate-900/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition backdrop-blur-sm">
+                                    <span class="text-white text-[10px] font-black tracking-widest uppercase">底层 (如石头)</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="flex-1 flex flex-col items-center gap-3">
+                            <div class="w-full aspect-square rounded-2xl border-4 border-emerald-200 flex items-center justify-center relative group overflow-hidden bg-emerald-50 cursor-pointer shadow-inner" onclick="document.getElementById('topUpload').click()">
+                                <canvas id="topPreview" class="pixelated w-full h-full object-contain absolute inset-0 p-2"></canvas>
+                                <div class="absolute inset-0 bg-emerald-900/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition backdrop-blur-sm">
+                                    <span class="text-white text-[10px] font-black tracking-widest uppercase">表层 (如草地)</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <input type="file" id="baseUpload" class="hidden" accept="image/*">
+                    <input type="file" id="topUpload" class="hidden" accept="image/*">
+                </div>
+
+                <div class="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 space-y-6">
+                    <h3 class="text-xs font-black text-slate-700 uppercase tracking-widest border-b border-slate-100 pb-4">2. 柔和熔合控制 (Soft Blending)</h3>
+                    
+                    <div>
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">边缘轮廓形态 (Corner Shape)</label>
+                        <div class="flex bg-slate-100 p-1 rounded-xl mt-3">
+                            <button onclick="setShape('rounded')" id="shp-rounded" class="flex-1 py-2.5 text-[10px] font-black uppercase rounded-lg bg-white shadow-sm text-emerald-600 transition-all">圆角 (自然)</button>
+                            <button onclick="setShape('slanted')" id="shp-slanted" class="flex-1 py-2.5 text-[10px] font-black uppercase rounded-lg text-slate-500 hover:text-slate-700 transition-all">斜角 (硬朗)</button>
+                            <button onclick="setShape('blocky')" id="shp-blocky" class="flex-1 py-2.5 text-[10px] font-black uppercase rounded-lg text-slate-500 hover:text-slate-700 transition-all">方块 (断层)</button>
+                        </div>
+                    </div>
+
+                    <div class="bg-emerald-50/50 p-6 rounded-2xl border border-emerald-100 space-y-4">
+                        <div class="flex justify-between text-[10px] font-bold text-emerald-700 uppercase">
+                            <span>✨ 边缘融合度 (Blend Softness)</span>
+                            <span id="blendVal" class="font-mono bg-emerald-100 px-2 py-0.5 rounded text-emerald-800">3 px</span>
+                        </div>
+                        <input type="range" id="blendRange" min="0" max="15" value="3" class="w-full accent-emerald-600">
+                        <p class="text-[9px] text-emerald-600/80 leading-relaxed font-medium">
+                            <strong class="text-emerald-700">【解决断层必调】</strong> 利用高斯羽化算法模糊边缘切割线。数值越高，草地渗入石头的过渡越自然，彻底消除笔直的悬崖切割感！
+                        </p>
+                    </div>
+                </div>
+
+                <div class="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 space-y-6">
+                    <h3 class="text-xs font-black text-slate-700 uppercase tracking-widest border-b border-slate-100 pb-4">3. 几何偏移补偿 (Offset)</h3>
+                    <div class="space-y-4">
+                        <div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase">
+                            <span>等轴测顶面高度 (Diamond Height)</span>
+                            <span id="diamondVal" class="font-mono bg-slate-100 px-2 py-0.5 rounded text-slate-700">Auto</span>
+                        </div>
+                        <input type="range" id="diamondRange" min="16" max="128" value="32" class="w-full accent-slate-400">
+                        <p class="text-[9px] text-slate-400 font-medium">控制蒙版开始向下挤出泥土厚度的分界线。默认自动计算为宽度的 1/2。</p>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="lg:col-span-8">
+                <div class="bg-slate-900 p-2 rounded-[3rem] shadow-2xl border border-slate-800 h-full min-h-[750px] flex flex-col">
+                    
+                    <div class="flex flex-wrap gap-4 justify-between items-center p-6 border-b border-slate-800/50">
+                        <div class="flex items-center gap-4">
+                            <div class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_15px_rgba(16,185,129,0.6)]"></div>
+                            <span class="text-xs font-black uppercase text-slate-300 tracking-[0.2em]">Alpha Masking Engine</span>
+                        </div>
+                        
+                        <div class="flex items-center gap-4 bg-slate-800 p-1.5 rounded-xl border border-slate-700">
+                            <label class="relative inline-flex items-center cursor-pointer px-3 py-1">
+                                <input type="checkbox" id="showBitmask" class="sr-only peer" onchange="generateTileset()">
+                                <div class="w-7 h-4 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[6px] after:left-[14px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-500"></div>
+                                <span class="ml-3 text-[10px] font-black text-slate-300 uppercase tracking-widest">显示连通域向导</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="flex-1 checkerboard rounded-[2.5rem] m-2 overflow-auto flex items-start justify-center p-8 relative shadow-inner">
+                        <canvas id="outputCanvas" class="pixelated shadow-2xl drop-shadow-2xl scale-[1.5] origin-top my-10"></canvas>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- 核心全局状态 ---
+        let baseImgObj = null;
+        let topImgObj = null;
+        let edgeShape = 'rounded'; 
+        
+        let tileW = 64;       
+        let tileH = 64;      
+        let diamondH = 32;    
+
+        const outputCanvas = document.getElementById('outputCanvas');
+        const ctx = outputCanvas.getContext('2d', { willReadFrequently: true });
+        const bCtx = document.getElementById('basePreview').getContext('2d');
+        const tCtx = document.getElementById('topPreview').getContext('2d');
+
+        document.getElementById('blendRange').oninput = e => { document.getElementById('blendVal').innerText = e.target.value + ' px'; generateTileset(); };
+        document.getElementById('diamondRange').oninput = e => { 
+            diamondH = parseInt(e.target.value); 
+            document.getElementById('diamondVal').innerText = diamondH + ' px'; 
+            generateTileset(); 
+        };
+        
+        function setShape(shape) {
+            edgeShape = shape;
+            ['rounded', 'slanted', 'blocky'].forEach(s => {
+                const btn = document.getElementById(`shp-${s}`);
+                if(s === shape) btn.className = "flex-1 py-2.5 text-[10px] font-black uppercase rounded-lg bg-white shadow-sm text-emerald-600 transition-all";
+                else btn.className = "flex-1 py-2.5 text-[10px] font-black uppercase rounded-lg text-slate-500 hover:text-slate-700 transition-all";
+            });
+            generateTileset();
+        }
+
+        // --- 1. 用户上传与尺寸感知 ---
+        document.getElementById('baseUpload').onchange = e => loadUserImage(e, 'basePreview', img => { baseImgObj = img; updateDimensions(); });
+        document.getElementById('topUpload').onchange = e => loadUserImage(e, 'topPreview', img => { topImgObj = img; updateDimensions(); });
+
+        function loadUserImage(e, canvasId, callback) {
+            const file = e.target.files[0];
+            if(!file) return;
+            const img = new Image();
+            img.onload = () => {
+                const cvs = document.getElementById(canvasId);
+                cvs.width = img.width; cvs.height = img.height;
+                cvs.getContext('2d').clearRect(0,0,img.width,img.height);
+                cvs.getContext('2d').drawImage(img, 0, 0);
+                callback(img);
+            }
+            img.src = URL.createObjectURL(file);
+        }
+
+        function updateDimensions() {
+            if(baseImgObj && topImgObj) {
+                tileW = Math.max(baseImgObj.width, topImgObj.width);
+                tileH = Math.max(baseImgObj.height, topImgObj.height);
+                diamondH = tileW / 2; // 默认 2:1
+                
+                // 更新滑块
+                document.getElementById('diamondRange').max = tileH;
+                document.getElementById('diamondRange').value = diamondH;
+                document.getElementById('diamondVal').innerText = diamondH + ' px';
+                document.getElementById('resBadge').innerText = `${tileW}x${tileH} PX`;
+                generateTileset();
+            }
+        }
+
+        // --- 2. 获取 47 连通域规则 ---
+        function getValid47Masks() {
+            const masks = [];
+            for(let i=0; i<256; i++) {
+                let n = i&1, ne = i&2, e = i&4, se = i&8, s = i&16, sw = i&32, w = i&64, nw = i&128;
+                if ((ne && !(n && e)) || (se && !(s && e)) || (sw && !(s && w)) || (nw && !(n && w))) continue;
+                masks.push(i);
+            }
+            return masks;
+        }
+
+        // --- 3. ✨核心引擎：绘制单象限蒙版 ---
+        function drawQuad(qCtx, size, edgeX, edgeY, corner, shape) {
+            qCtx.fillStyle = 'white';
+            if (edgeX && edgeY && corner) {
+                qCtx.fillRect(0, 0, size, size);
+            } else if (edgeX && edgeY && !corner) {
+                // 内部拐角缺失
+                qCtx.fillRect(0, 0, size, size);
+                qCtx.globalCompositeOperation = 'destination-out';
+                qCtx.beginPath();
+                if (shape === 'rounded') {
+                    qCtx.moveTo(size, size);
+                    qCtx.arc(size, size, size, Math.PI, 1.5 * Math.PI);
+                } else if (shape === 'slanted') {
+                    qCtx.moveTo(size, 0); qCtx.lineTo(0, size); qCtx.lineTo(size, size);
+                } else {
+                    qCtx.fillRect(size/2, size/2, size/2, size/2);
+                }
+                qCtx.fill();
+                qCtx.globalCompositeOperation = 'source-over';
+            } else if (edgeX && !edgeY) {
+                qCtx.fillRect(0, 0, size, size/2); 
+            } else if (!edgeX && edgeY) {
+                qCtx.fillRect(0, 0, size/2, size); 
+            } else { // 外角
+                qCtx.beginPath();
+                if (shape === 'rounded') {
+                    qCtx.moveTo(0,0); qCtx.arc(0, 0, size/2, 0, 0.5 * Math.PI);
+                } else if (shape === 'slanted') {
+                    qCtx.moveTo(0,0); qCtx.lineTo(size/2, 0); qCtx.lineTo(0, size/2);
+                } else {
+                    qCtx.fillRect(0, 0, size/2, size/2);
+                }
+                qCtx.fill();
+            }
+        }
+
+        // --- 4. 生成完美的羽化透明度蒙版 (Feathered Alpha Mask) ---
+        function createIsoMask(maskVal, shape, feather) {
+            // 计算旋转45度前所需的正方形尺寸 S
+            const S = Math.ceil(tileW / Math.SQRT2); 
+            const halfS = S / 2;
+
+            const flatCvs = document.createElement('canvas');
+            flatCvs.width = S; flatCvs.height = S;
+            const fCtx = flatCvs.getContext('2d');
+            fCtx.fillStyle = 'black'; fCtx.fillRect(0,0,S,S);
+
+            // 解析方向
+            const n = maskVal&1, ne = maskVal&2, e = maskVal&4, se = maskVal&8;
+            const s = maskVal&16, sw = maskVal&32, w = maskVal&64, nw = maskVal&128;
+
+            // 绘制四个象限 (SE, SW, NW, NE) 到正方形画布
+            // 中心为 (halfS, halfS)
+            fCtx.translate(halfS, halfS);
+            
+            // SE 象限 (右下)
+            fCtx.save(); drawQuad(fCtx, halfS, e, s, se, shape); fCtx.restore();
+            // SW 象限 (左下)
+            fCtx.save(); fCtx.rotate(Math.PI/2); drawQuad(fCtx, halfS, s, w, sw, shape); fCtx.restore();
+            // NW 象限 (左上)
+            fCtx.save(); fCtx.rotate(Math.PI); drawQuad(fCtx, halfS, w, n, nw, shape); fCtx.restore();
+            // NE 象限 (右上)
+            fCtx.save(); fCtx.rotate(-Math.PI/2); drawQuad(fCtx, halfS, n, e, ne, shape); fCtx.restore();
+
+            fCtx.translate(-halfS, -halfS);
+
+            // 【黑科技】: 将正交平面映射为等轴测，并加入羽化 (Feather/Blur)
+            const topMaskCvs = document.createElement('canvas');
+            topMaskCvs.width = tileW; topMaskCvs.height = tileH;
+            const tmCtx = topMaskCvs.getContext('2d');
+            
+            // 加入高斯羽化来消除锯齿切割感！
+            tmCtx.filter = `blur(${feather}px)`;
+            
+            tmCtx.save();
+            tmCtx.translate(tileW/2, 0); // 移动到等轴测菱形顶部顶点
+            tmCtx.scale(1, diamondH / tileW); // Y轴压缩产生 2:1 透视
+            tmCtx.rotate(45 * Math.PI / 180); // 旋转 45 度
+            tmCtx.drawImage(flatCvs, -halfS, -halfS); // 居中绘制
+            tmCtx.restore();
+
+            // 【完美挤出算法】: 将顶面蒙版向下复制，形成包裹泥土侧面的体积蒙版
+            const finalMaskCvs = document.createElement('canvas');
+            finalMaskCvs.width = tileW; finalMaskCvs.height = tileH;
+            const fmCtx = finalMaskCvs.getContext('2d');
+            
+            const thickness = Math.max(0, tileH - diamondH);
+            for(let i=0; i<=thickness; i++) {
+                fmCtx.drawImage(topMaskCvs, 0, i);
+            }
+
+            return finalMaskCvs;
+        }
+
+        // --- 5. 渲染装配 ---
+        function generateTileset() {
+            if (!baseImgObj || !topImgObj) return;
+
+            const feather = parseInt(document.getElementById('blendRange').value);
+            const showBitmask = document.getElementById('showBitmask').checked;
+            const masks = getValid47Masks(); 
+            
+            const cols = 8, rows = 6;
+            outputCanvas.width = cols * tileW;
+            outputCanvas.height = rows * tileH;
+            ctx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
+
+            for (let i = 0; i < masks.length; i++) {
+                const maskVal = masks[i];
+                const cx = (i % cols) * tileW;
+                const cy = Math.floor(i / cols) * tileH;
+
+                // 1. 获取柔和的三维蒙版
+                const maskCvs = createIsoMask(maskVal, edgeShape, feather);
+
+                // 2. 利用 Canvas 混合模式，完美裁剪草地图像
+                const topLayer = document.createElement('canvas');
+                topLayer.width = tileW; topLayer.height = tileH;
+                const topCtx = topLayer.getContext('2d');
+                
+                // 先画出草地原图
+                topCtx.drawImage(topImgObj, 0, 0, tileW, tileH);
+                // 应用生成的蒙版 ( destination-in 意味着只保留蒙版内部的像素，且完美继承蒙版的透明度渐变 )
+                topCtx.globalCompositeOperation = 'destination-in';
+                topCtx.drawImage(maskCvs, 0, 0);
+
+                // 3. 最终组合
+                // 绘制基础石头/泥土层
+                ctx.drawImage(baseImgObj, 0, 0, tileW, tileH, cx, cy, tileW, tileH);
+                // 叠加柔和剪裁后的草地层
+                ctx.drawImage(topLayer, cx, cy);
+
+                // 4. UI 连通向导
+                if (showBitmask) {
+                    ctx.fillStyle = 'rgba(59, 130, 246, 0.9)';
+                    const t = maskVal&1, tr = maskVal&2, r = maskVal&4, br = maskVal&8;
+                    const b = maskVal&16, bl = maskVal&32, l = maskVal&64, tl = maskVal&128;
+                    const map = [ [tl, t, tr], [l, 1, r], [bl, b, br] ];
+                    const spX = tileW / 4, spY = diamondH / 4;
+                    const cX = cx + tileW/2, cY = cy + diamondH/2;
+                    for(let ry=0; ry<3; ry++) {
+                        for(let rx=0; rx<3; rx++) {
+                            if (map[ry][rx]) {
+                                ctx.fillRect(cX + (rx-1)*spX - 2, cY + (ry-1)*spY - 2, 4, 4);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        function exportSpritesheet() {
+            const a = document.createElement('a');
+            a.download = `autotile_feather_v4_${Date.now()}.png`;
+            a.href = outputCanvas.toDataURL();
+            a.click();
+        }
+
+        // 初始化演示
+        window.onload = () => {
+            // 画两个简单的色块做演示
+            const bC = document.createElement('canvas'); bC.width = 64; bC.height = 64;
+            const bcx = bC.getContext('2d'); bcx.fillStyle = '#451a03'; bcx.fillRect(0,0,64,64);
+            const tC = document.createElement('canvas'); tC.width = 64; tC.height = 64;
+            const tcx = tC.getContext('2d'); tcx.fillStyle = '#22c55e'; tcx.fillRect(0,0,64,64);
+            
+            document.getElementById('basePreview').width = 64; document.getElementById('basePreview').height = 64;
+            document.getElementById('topPreview').width = 64; document.getElementById('topPreview').height = 64;
+            bCtx.drawImage(bC, 0, 0); tCtx.drawImage(tC, 0, 0);
+            
+            setTimeout(() => {
+                // 不自动覆盖为空白，等待用户上传
+            }, 200);
+        };
+
+    </script>
+</body>
+</html>
