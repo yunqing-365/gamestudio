@@ -1134,6 +1134,27 @@ async function exportAll() {
 // ══════════════════════════════════════════════
 initBoundaryCanvas();
 buildStyleGrid();
+
+let nextSlot = 'A';
+PipelineSDK.init((file) => {
+    const dt = new DataTransfer(); 
+    dt.items.add(file);
+    const targetInput = nextSlot === 'A' ? document.getElementById('fileA') : document.getElementById('fileB');
+    targetInput.files = dt.files;
+    targetInput.dispatchEvent(new Event('change'));
+    nextSlot = nextSlot === 'A' ? 'B' : 'A';
+});
+
+// 它的导出是循环生成的，你可以提供一个专门的“打包并流转”按钮，或推送单张：
+function downloadCanvas(canvas, filename) {
+  const a = document.createElement('a');
+  a.download = filename;
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+  
+  // 🌟 追加：推送
+  PipelineSDK.push(canvas, filename);
+}
 </script>
 </body>
 </html>

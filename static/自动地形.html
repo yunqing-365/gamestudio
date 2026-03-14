@@ -395,7 +395,36 @@
                 // 不自动覆盖为空白，等待用户上传
             }, 200);
         };
+// 初始化接收器，自定义填充规则：一次填充底层，再点一次填充表层
+let nextInjectTarget = 'base';
+PipelineSDK.init((file) => {
+    const dt = new DataTransfer(); 
+    dt.items.add(file);
+    
+    if (nextInjectTarget === 'base') {
+        const input = document.getElementById('baseUpload');
+        input.files = dt.files; 
+        input.dispatchEvent(new Event('change'));
+        nextInjectTarget = 'top'; // 下一次点击注入会给 top
+    } else {
+        const input = document.getElementById('topUpload');
+        input.files = dt.files; 
+        input.dispatchEvent(new Event('change'));
+        nextInjectTarget = 'base'; // 重置
+    }
+});
 
+// 在导出函数中：
+function exportSpritesheet() {
+    const filename = `autotile_feather_v4_${Date.now()}.png`;
+    const a = document.createElement('a');
+    a.download = filename;
+    a.href = outputCanvas.toDataURL();
+    a.click();
+    
+    // 🌟 追加：推送
+    PipelineSDK.push(outputCanvas, filename);
+}
     </script>
 </body>
 </html>

@@ -235,68 +235,80 @@
         // =====================================
         // 核心二：跨帧素材注入引擎
         // =====================================
+      // =====================================
+        // 核心二：跨帧素材注入引擎
+        // =====================================
         function toggleAssetPicker(show) {
             document.getElementById('assetPickerModal').classList.toggle('hidden', !show);
         }
 
-        function openAssetPicker() {
-            const unprocessed = assetDb.filter(a => a.status === 'UNPROCESSED');
-            const pickerGrid = document.getElementById('pickerGrid');
-            const peState = document.getElementById('pickerEmptyState');
-
-            pickerGrid.innerHTML = '';
-            if (unprocessed.length === 0) {
-                peState.classList.remove('hidden');
-            } else {
-                peState.classList.add('hidden');
-                unprocessed.forEach(asset => {
-                    const card = document.createElement('div');
-                    card.className = "bg-white p-3 rounded-2xl shadow-sm border border-slate-200 cursor-pointer hover:border-indigo-500 hover:shadow-lg transition-all group relative active:scale-95";
-                    card.onclick = () => injectAssetIntoTool(asset);
-                    card.innerHTML = `
-                        <div class="checkerboard w-full aspect-square rounded-xl overflow-hidden mb-3 relative border border-slate-100">
-                            <img src="${asset.url}" class="w-full h-full object-contain pixelated p-2">
-                            <div class="absolute inset-0 bg-indigo-900/0 group-hover:bg-indigo-900/40 transition-colors flex items-center justify-center backdrop-blur-[0px] group-hover:backdrop-blur-[2px]">
-                                <span class="bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest px-4 py-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-2xl scale-90 group-hover:scale-100">注入此图</span>
-                            </div>
-                        </div>
-                        <p class="text-[10px] font-bold text-slate-700 truncate px-1 text-center" title="${asset.name}">${asset.name}</p>
-                    `;
-                    pickerGrid.appendChild(card);
-                });
+        // 🌟 1. 【这是全新加在这里的】监听子模块发回的处理结果
+        window.addEventListener('message', async (e) => {
+            if (e.data && e.data.action === 'export_asset') {
+                viewSubtitle.innerText = "⏳ 接收到流水线回传数据，正在入库暂存区...";
+                try {
+                    const response = await fetch('/api/pipeline_save', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ filename: e.data.filename, base64: e.data.base64 })
+                    });
+                    if (response.ok) {
+                        const newAsset = await response.json();
+                        assetDb.push(newAsset);
+                        viewSubtitle.innerText = "✅ 已自动保存在「暂存区」！";
+                        // 自动切换到暂存区查看
+                        if (currentFilter !== 'INTERMEDIATE') openWorkspace('asset', 'INTERMEDIATE');
+                        else renderAssetEngine();
+                    }
+                } catch (err) {
+                    console.error("入库失败", err);
+                }
             }
+        });
+
+        // 🌟 2. 【替换原来的函数】改造注图逻辑：不再查 DOM，直接利用总线广播
+        async function injectAssetIntoTool(asset) {
+            const iframeWin = document.getElementById('toolWorkspace').contentWindow;
+            // 通过通信协议发送
+            iframeWin.postMessage({
+                action: 'inject_asset',
+                asset: { name: asset.name, url: asset.url }
+            }, '*');
+            
+            toggleAssetPicker(false);
+            viewSubtitle.innerText = `✅ 素材已推送至目标工具的接收器！`;
+        }
+
+        // 🌟 3. 【替换原来的函数】让注入选择器显示所有图片（包括刚生成的暂存图）
+        function openAssetPicker() {
+            // 将所有状态的文件混合，并倒序排列（最新的排前面）
+            const allAssets = [...assetDb].reverse(); 
+            const pickerGrid = document.getElementById('pickerGrid');
+            pickerGrid.innerHTML = '';
+            
+            allAssets.forEach(asset => {
+                const card = document.createElement('div');
+                // 根据状态给点颜色区分
+                const badgeColor = asset.status === 'INTERMEDIATE' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500';
+                card.className = "bg-white p-3 rounded-2xl shadow-sm border border-slate-200 cursor-pointer hover:border-indigo-500 hover:shadow-lg transition-all group relative active:scale-95";
+                card.onclick = () => injectAssetIntoTool(asset);
+                card.innerHTML = `
+                    <div class="checkerboard w-full aspect-square rounded-xl overflow-hidden mb-3 relative border border-slate-100">
+                        <img src="${asset.url}" class="w-full h-full object-contain pixelated p-2">
+                        <div class="absolute inset-0 bg-indigo-900/0 group-hover:bg-indigo-900/40 transition-colors flex items-center justify-center backdrop-blur-[0px] group-hover:backdrop-blur-[2px]">
+                            <span class="bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest px-4 py-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-2xl scale-90 group-hover:scale-100">注入此图</span>
+                        </div>
+                    </div>
+                    <p class="text-[10px] font-bold text-slate-700 truncate px-1 text-center" title="${asset.name}">${asset.name}</p>
+                    <div class="absolute top-1 left-1 px-2 py-0.5 rounded text-[8px] font-black ${badgeColor}">${asset.status}</div>
+                `;
+                pickerGrid.appendChild(card);
+            });
             toggleAssetPicker(true);
         }
+        
 
-        async function injectAssetIntoTool(asset) {
-            try {
-                // 由于我们使用了真实后端，URL 是 /assets/raw/... 可以直接 Fetch 抓取
-                const response = await fetch(asset.url);
-                const blob = await response.blob();
-                const file = new File([blob], asset.name, { type: blob.type || 'image/png' });
-                
-                const dt = new DataTransfer();
-                dt.items.add(file);
-
-                const iframeWin = document.getElementById('toolWorkspace').contentWindow;
-                const iframeDoc = iframeWin.document;
-                const targetInput = iframeDoc.getElementById('fileInput');
-                
-                if (targetInput) {
-                    targetInput.files = dt.files;
-                    const event = new Event('change', { bubbles: true });
-                    targetInput.dispatchEvent(event);
-                    toggleAssetPicker(false);
-                    viewSubtitle.innerText = `✅ 素材 ${asset.name} 注入成功！`;
-                } else {
-                    alert("⚠️ 注入失败：当前工具没有标准的 #fileInput 上传接口。");
-                }
-            } catch (err) {
-                console.error(err);
-                alert("⚠️ 跨域失败：请确保所有文件都在 FastAPI 环境下运行 (http://localhost:8000)");
-            }
-        }
-
+       
         // =====================================
         // 工具模块管理
         // =====================================
@@ -461,6 +473,44 @@
         // 🌟 启动时立刻请求服务器同步数据
         loadAssetsFromServer();
         
+// 🎮 Pipeline SDK (放入所有子模块中)
+window.PipelineSDK = {
+    init(customHandler) {
+        window.addEventListener('message', async (e) => {
+            if (e.data && e.data.action === 'inject_asset') {
+                const res = await fetch(e.data.asset.url);
+                const blob = await res.blob();
+                const file = new File([blob], e.data.asset.name, { type: blob.type });
+                
+                if (customHandler) {
+                    // 工具自定义了接收逻辑（如有多槽位）
+                    customHandler(file);
+                } else {
+                    // 默认行为：寻找页面中第一个 fileInput 强行塞入
+                    const input = document.getElementById('fileInput') || document.querySelector('input[type="file"]');
+                    if(input) {
+                        const dt = new DataTransfer(); dt.items.add(file);
+                        input.files = dt.files;
+                        input.dispatchEvent(new Event('change', {bubbles:true}));
+                    }
+                }
+            }
+        });
+    },
+    push(canvas, filename) {
+        // 将画布结果打回父窗口
+        window.parent.postMessage({
+            action: 'export_asset', filename: filename, base64: canvas.toDataURL('image/png')
+        }, '*');
+        
+        // 显示流水线通知 Toast
+        const div = document.createElement('div');
+        div.innerHTML = '🚀 已推送至流水线暂存区';
+        div.className = 'fixed top-4 right-4 bg-emerald-500 text-white px-4 py-2 rounded-xl shadow-2xl z-50 font-black tracking-widest text-xs uppercase animate-pulse';
+        document.body.appendChild(div);
+        setTimeout(() => div.remove(), 2500);
+    }
+};
     </script>
 </body>
 </html>

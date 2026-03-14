@@ -583,7 +583,20 @@
             const link=document.createElement('a'); link.download='v15_master_tile.png'; link.href=canvas.toDataURL(); link.click();
         };
         window.onresize = updateGuide;
+// 初始化接收器（单文件直接默认接管）
+PipelineSDK.init();
 
+// 在原有的下载事件里，加一行推送代码
+document.getElementById('downloadBtn').onclick = () => {
+    const filename = 'v15_master_tile.png';
+    const link = document.createElement('a'); 
+    link.download = filename; 
+    link.href = canvas.toDataURL(); 
+    link.click();
+    
+    // 🌟 追加：发送给中枢
+    PipelineSDK.push(canvas, filename); 
+};
     </script>
 </body>
 </html>

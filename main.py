@@ -8,6 +8,12 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+import base64
+from pydantic import BaseModel
+
+class ImageData(BaseModel):
+    filename: str
+    base64: str
 
 app = FastAPI(title="Asset Master Pipeline API")
 
@@ -117,3 +123,31 @@ def process_asset(asset_id: str):
         return {"message": "OpenCV 处理完成", "asset": asset}
     else:
         raise HTTPException(status_code=500, detail="OpenCV 无法读取该图像")
+    
+    # --- API 4: 工作流暂存接口 (流水线回传) ---
+@app.post("/api/pipeline_save")
+def pipeline_save(data: ImageData):
+    # 解析 base64
+    header, encoded = data.base64.split(",", 1)
+    file_data = base64.b64decode(encoded)
+    
+    ext = data.filename.split(".")[-1] if "." in data.filename else "png"
+    asset_id = f"AST_{uuid.uuid4().hex[:8].upper()}"
+    save_filename = f"{asset_id}.{ext}"
+    
+    # 存入处理后的文件夹
+    file_path = os.path.join(PROC_DIR, save_filename)
+    with open(file_path, "wb") as f:
+        f.write(file_data)
+        
+    db = load_db()
+    new_asset = {
+        "id": asset_id,
+        "name": data.filename,
+        "url": f"/assets/processed/{save_filename}",
+        "status": "INTERMEDIATE"  # 🌟 新增状态：中间暂存区
+    }
+    db.append(new_asset)
+    save_db(db)
+    
+    return new_asset
